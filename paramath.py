@@ -20,6 +20,7 @@ BUILTIN_FUNCS = ["abs", "sin", "cos", "tan", "arcsin", "arccos", "arctan"]
 BASIC_OPS = {"+", "-", "*", "/", "**"} | set(BUILTIN_FUNCS)
 
 
+OP_PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2, "**": 3}
 OPERATION_EXPANSIONS = {
     "==": lambda a, b, eps: [
         "/",
@@ -174,7 +175,12 @@ class ProgramConfig:
     current_simplify: bool = None
     detect_duplicates: bool = True
     current_dupe: bool = None
+    dupe_min_savings: int = -999
+    current_dupe_min_savings: int = None
     loop_stack: List[LoopContext] = field(default_factory=list)
+    var_names: List[str] = field(
+        default_factory=lambda: list("abcdefxym") + ["pi", "e"]
+    )
 
     def __post_init__(self):
         if self.current_epsilon is None:
@@ -185,7 +191,8 @@ class ProgramConfig:
             self.current_simplify = self.simplify_literals
         if self.current_dupe is None:
             self.current_dupe = self.detect_duplicates
-        debug_print("initialized program config")
+        if self.current_dupe_min_savings is None:
+            self.current_dupe_min_savings = self.dupe_min_savings
 
 
 @dataclass
@@ -204,6 +211,7 @@ class Instruction:
     precision: Optional[int]
     simplify: bool
     dupe: bool
+    dupe_min_savings: int
     line_start: int
     line_end: int
 
@@ -322,7 +330,6 @@ def compile_value(
         eval_namespace = {
             "__builtins__": builtins.__dict__,
             "consts": type("Consts", (), constants)(),
-            "loop": type("Loop", (), loop_vars)(),
             "local": type("Local", (), loop_vars)(),
             **constants,
         }
@@ -505,6 +512,7 @@ def parse_tokens(tokens: List[str], line_num: int) -> Any:
                 return token
 
 
+# abc
 def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any]:
     if op == "*":
         if 0 in operands:
@@ -515,12 +523,20 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
                 return operands[1]
             if operands[1] == 1:
                 return operands[0]
+            # x / x = 1
+            if operands[0] == operands[1]:
+                debug_print("simplified x * x via structural")
+                return ["**", operands[0], 2]
     elif op == "+":
         if len(operands) == 2:
             if operands[0] == 0:
                 return operands[1]
             if operands[1] == 0:
                 return operands[0]
+            # a + a = 2 * a
+            if operands[0] == operands[1]:
+                debug_print("simplified a + a = 2*a")
+                return ["*", 2, operands[0]]
     elif op == "-":
         if len(operands) == 2:
             if operands[1] == 0:
@@ -534,6 +550,10 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
                 return 0
             if operands[1] == 1:
                 return operands[0]
+            # x / x = 1
+            if operands[0] == operands[1]:
+                debug_print("simplified x / x = 1")
+                return 1
     elif op == "**":
         if len(operands) == 2:
             if operands[1] == 0:
@@ -545,6 +565,117 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
     return None
 
 
+def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[Any]:
+    """handles more complex algebraic simplifications like a+a+a=3*a and a*a*a=a**3"""
+
+    if op == "+":
+        # flatten nested additions first
+        flat_operands = []
+        for operand in operands:
+            if isinstance(operand, list) and len(operand) >= 2 and operand[0] == "+":
+                flat_operands.extend(operand[1:])
+            else:
+                flat_operands.append(operand)
+
+        # count occurrences of each term
+        term_counts = {}
+        for operand in flat_operands:
+            key = json.dumps(operand, sort_keys=False)
+            if key not in term_counts:
+                term_counts[key] = {"count": 0, "term": operand}
+            term_counts[key]["count"] += 1
+
+        # rebuild with multiplications
+        new_terms = []
+        for data in term_counts.values():
+            if data["count"] == 1:
+                new_terms.append(data["term"])
+            else:
+                new_terms.append(["*", data["count"], data["term"]])
+
+        if len(new_terms) == 0:
+            return 0
+        elif len(new_terms) == 1:
+            return new_terms[0]
+        elif len(new_terms) != len(flat_operands):
+            # we actually simplified something!!
+            debug_print(
+                f"simplified repeated addition: {len(flat_operands)} -> {len(new_terms)} terms"
+            )
+            # rebuild as nested binary additions
+            result = new_terms[-1]
+            for term in reversed(new_terms[:-1]):
+                result = ["+", term, result]
+            return result
+
+    elif op == "*":
+        # flatten nested multiplications first
+        flat_operands = []
+        for operand in operands:
+            if isinstance(operand, list) and len(operand) >= 2 and operand[0] == "*":
+                flat_operands.extend(operand[1:])
+            else:
+                flat_operands.append(operand)
+
+        # count occurrences of each base
+        base_counts = {}
+        numeric_product = 1
+
+        for operand in flat_operands:
+            # handle numeric literals separately
+            if isinstance(operand, (int, float)):
+                numeric_product *= operand
+                continue
+
+            # handle existing powers a**n
+            if isinstance(operand, list) and len(operand) == 3 and operand[0] == "**":
+                base = operand[1]
+                power = operand[2]
+                key = json.dumps(base, sort_keys=False)
+                if key not in base_counts:
+                    base_counts[key] = {"power": 0, "base": base}
+                base_counts[key]["power"] += power
+            else:
+                key = json.dumps(operand, sort_keys=False)
+                if key not in base_counts:
+                    base_counts[key] = {"power": 0, "base": operand}
+                base_counts[key]["power"] += 1
+
+        # rebuild with exponentiation
+        new_factors = []
+
+        # add numeric product if not 1
+        if numeric_product != 1:
+            if numeric_product == 0:
+                return 0
+            new_factors.append(numeric_product)
+
+        for data in base_counts.values():
+            if data["power"] == 0:
+                continue  # shouldn't happen but just in case
+            elif data["power"] == 1:
+                new_factors.append(data["base"])
+            else:
+                new_factors.append(["**", data["base"], data["power"]])
+
+        if len(new_factors) == 0:
+            return 1
+        elif len(new_factors) == 1:
+            return new_factors[0]
+        elif len(new_factors) != len(flat_operands):
+            # we actually simplified something!!
+            debug_print(
+                f"simplified repeated multiplication: {len(flat_operands)} -> {len(new_factors)} factors"
+            )
+            # rebuild as nested binary multiplications
+            result = new_factors[-1]
+            for factor in reversed(new_factors[:-1]):
+                result = ["*", factor, result]
+            return result
+
+    return None
+
+
 @cached("simplify")
 def simplify_ast(
     ast: Any,
@@ -553,8 +684,10 @@ def simplify_ast(
     functions: Dict[str, Function],
     aliases: Dict[str, str],
     line_num: int,
+    var_names: List[str] = None,
 ) -> Any:
-    verbose_print(f"simplifying ast at line {line_num}")
+    if var_names is None:
+        var_names = list("abcdefxym") + ["ans", "pi", "e"]
 
     if isinstance(ast, (int, float)):
         return ast
@@ -564,25 +697,24 @@ def simplify_ast(
         if ast_lower in aliases:
             actual_var = aliases[ast_lower]
             if actual_var in constants:
-                debug_print(f"resolved alias {ast} -> constant {actual_var}")
                 return constants[actual_var]
-            if actual_var.lower() in VAR_NAMES:
+            if actual_var.lower() in var_names:
                 return actual_var.lower()
             raise ParserError(
                 f"alias '{ast}' points to unknown variable '{actual_var}'", line_num
             )
         if ast in constants:
-            debug_print(f"resolved constant {ast}")
             return constants[ast]
-        print()
-        if ast_lower in VAR_NAMES:
+        if ast_lower in var_names:
             return ast_lower
         if ast == "ε" or ast_lower == "epsilon":
             return epsilon
         raise ParserError(f"unknown identifier '{ast}'", line_num)
 
     if isinstance(ast, list) and len(ast) == 1:
-        return simplify_ast(ast[0], epsilon, constants, functions, aliases, line_num)
+        return simplify_ast(
+            ast[0], epsilon, constants, functions, aliases, line_num, var_names
+        )
 
     if not isinstance(ast, list) or len(ast) == 0:
         raise ParserError(f"invalid ast node: {ast}", line_num)
@@ -611,9 +743,14 @@ def simplify_ast(
                 f"lambda expects {len(params)} arguments, got {len(args)}", line_num
             )
         substituted_body = substitute_params(body, params, args)
-        debug_print(f"applied lambda with {len(args)} arguments")
         return simplify_ast(
-            substituted_body, epsilon, constants, functions, aliases, line_num
+            substituted_body,
+            epsilon,
+            constants,
+            functions,
+            aliases,
+            line_num,
+            var_names,
         )
 
     if isinstance(ast[0], str) and ast[0].lower() == "lambda":
@@ -624,7 +761,9 @@ def simplify_ast(
 
     op = ast[0]
     if isinstance(op, list):
-        op = simplify_ast(op, epsilon, constants, functions, aliases, line_num)
+        op = simplify_ast(
+            op, epsilon, constants, functions, aliases, line_num, var_names
+        )
 
     if isinstance(op, str):
         op_lower = op.lower()
@@ -638,27 +777,56 @@ def simplify_ast(
                     line_num,
                 )
             substituted_body = substitute_params(func.body, func.params, args)
-            debug_print(f"calling function {func.name}")
             return simplify_ast(
-                substituted_body, epsilon, constants, functions, aliases, line_num
+                substituted_body,
+                epsilon,
+                constants,
+                functions,
+                aliases,
+                line_num,
+                var_names,
             )
 
         if op_lower in BASIC_OPS:
             simplified_operands = [
-                simplify_ast(node, epsilon, constants, functions, aliases, line_num)
+                simplify_ast(
+                    node, epsilon, constants, functions, aliases, line_num, var_names
+                )
                 for node in ast[1:]
             ]
+
             identity_result = apply_identity_simplifications(
                 op_lower, simplified_operands
             )
             if identity_result is not None:
-                return identity_result
+                return simplify_ast(
+                    identity_result,
+                    epsilon,
+                    constants,
+                    functions,
+                    aliases,
+                    line_num,
+                    var_names,
+                )
+
+            structural_result = apply_structural_simplifications(
+                op_lower, simplified_operands
+            )
+            if structural_result is not None:
+                return simplify_ast(
+                    structural_result,
+                    epsilon,
+                    constants,
+                    functions,
+                    aliases,
+                    line_num,
+                    var_names,
+                )
 
             if op_lower in ["+", "*"] and len(simplified_operands) > 2:
                 result = simplified_operands[-1]
                 for operand in reversed(simplified_operands[:-1]):
                     result = [op_lower, operand, result]
-                debug_print(f"flattened {op_lower} operation")
                 return result
 
             return [op_lower] + simplified_operands
@@ -667,7 +835,9 @@ def simplify_ast(
             expansion = OPERATION_EXPANSIONS[op_lower]
             operands = ast[1:]
             simplified_operands = [
-                simplify_ast(node, epsilon, constants, functions, aliases, line_num)
+                simplify_ast(
+                    node, epsilon, constants, functions, aliases, line_num, var_names
+                )
                 for node in operands
             ]
 
@@ -690,9 +860,8 @@ def simplify_ast(
             else:
                 raise ParserError(f"unknown expansion for '{op_lower}'", line_num)
 
-            debug_print(f"expanded {op_lower} operation")
             return simplify_ast(
-                expanded, epsilon, constants, functions, aliases, line_num
+                expanded, epsilon, constants, functions, aliases, line_num, var_names
             )
 
         raise ParserError(f"unknown operation '{op_lower}'", line_num)
@@ -778,14 +947,20 @@ def generate_expression(ast: Any, line_num: int) -> str:
         needs_right_parens = (
             isinstance(operands[1], list)
             and len(operands[1]) >= 2
-            and operands[1][0] in ["+", "-", "*", "/", "**"]
-            and operands[1][0] != op
+            and operands[1][0] in OP_PRECEDENCE
+            and OP_PRECEDENCE[operands[1][0]] < OP_PRECEDENCE[op]
         )
         needs_left_parens = (
-            op in ["-", "/", "**"]
-            and isinstance(operands[0], list)
+            isinstance(operands[0], list)
             and len(operands[0]) >= 2
-            and operands[0][0] in ["+", "-", "*", "/", "**"]
+            and operands[0][0] in OP_PRECEDENCE
+            and (
+                OP_PRECEDENCE[operands[0][0]] < OP_PRECEDENCE[op]
+                or (
+                    op in ["-", "/", "**"]
+                    and OP_PRECEDENCE[operands[0][0]] <= OP_PRECEDENCE[op]
+                )
+            )
         )
 
         if needs_left_parens:
@@ -807,7 +982,7 @@ def generate_expression(ast: Any, line_num: int) -> str:
 @cached("try_simplify")
 def try_simplify(ast, inst):
     if not isinstance(ast, list):
-        return (ast, not isinstance(ast, str))
+        return (ast, isinstance(ast, str))
 
     if len(ast) == 1:
         return try_simplify(ast[0], inst)
@@ -828,12 +1003,16 @@ def try_simplify(ast, inst):
         return ([op] + simplified_args, True)
 
     expr = generate_expression([op] + simplified_args, -1)
-    result_val = round(eval(expr), inst.precision)
-    if result_val.is_integer():
-        result_val = int(result_val)
 
-    debug_print(f"simplified literal expression to {result_val}")
-    return (result_val, False)
+    try:
+        result_val = round(eval(expr), inst.precision)
+        if result_val.is_integer():
+            result_val = int(result_val)
+        debug_print(f"simplified literal expression to {result_val}")
+        return (result_val, False)
+    except Exception as e:
+        debug_print(f"failed to simplify literal: {e}")
+        return ([op] + simplified_args, True)
 
 
 def parse_pragma(
@@ -849,33 +1028,47 @@ def parse_pragma(
     pragma = first_split[0][2:].lower()
     rest_of_line = first_split[1] if len(first_split) > 1 else ""
 
-    verbose_print(f"processing pragma: {pragma} at line {line_num}")
-
     if pragma == "precision":
         if not rest_of_line:
             raise ParserError("precision requires a value", line_num)
         config.precision = int(rest_of_line.strip())
         config.current_precision = config.precision
-        debug_print(f"set precision to {config.precision}")
 
     elif pragma == "epsilon":
         if not rest_of_line:
             raise ParserError("epsilon requires a value", line_num)
         config.epsilon = rest_of_line.strip()
         config.current_epsilon = config.epsilon
-        debug_print(f"set epsilon to {config.epsilon}")
 
-    elif pragma in ["simplify", "dupe"]:
+    elif pragma == "simplify":
         if not rest_of_line:
             raise ParserError(f"{pragma} requires true/false", line_num)
         value = rest_of_line.strip().lower() == "true"
-        if pragma == "simplify":
-            config.simplify_literals = value
-            config.current_simplify = value
-        else:
-            config.detect_duplicates = value
-            config.current_dupe = value
-        debug_print(f"set {pragma} to {value}")
+        config.simplify_literals = value
+        config.current_simplify = value
+
+    elif pragma == "dupe":
+        if not rest_of_line:
+            raise ParserError(f"{pragma} requires true/false", line_num)
+        parts = rest_of_line.strip().split()
+        value = parts[0].lower() == "true"
+        config.detect_duplicates = value
+        config.current_dupe = value
+        if len(parts) >= 2:
+            try:
+                min_savings = int(parts[1])
+                config.dupe_min_savings = min_savings
+                config.current_dupe_min_savings = min_savings
+            except ValueError:
+                raise ParserError(f"dupe min_savings must be an integer", line_num)
+
+    elif pragma == "variables":
+        if not rest_of_line:
+            raise ParserError("variables requires variable names", line_num)
+        var_list = rest_of_line.strip().split()
+        if "ans" in var_list:
+            raise ParserError("cannot override 'ans' in //variables", line_num)
+        config.var_names = var_list + ["ans", "pi", "e"]
 
     elif pragma == "alias":
         parts = rest_of_line.split(None, 1)
@@ -887,12 +1080,11 @@ def parse_pragma(
             raise ParserError(f"invalid alias name '{alias_name}'", line_num)
         if alias_name in config.aliases:
             return True, current_phase
-        if target_var not in VAR_NAMES:
+        if target_var not in config.var_names:
             raise ParserError(
                 f"alias target '{target_var}' must be a valid variable", line_num
             )
         config.aliases[alias_name] = target_var
-        debug_print(f"created alias {alias_name} -> {target_var}")
 
     elif pragma == "global":
         parts = rest_of_line.split(None, 1)
@@ -903,18 +1095,15 @@ def parse_pragma(
         config.constants[const_name] = compile_value(
             const_value_str, config.constants, line_num, config
         )
-        debug_print(f"created global {const_name} = {config.constants[const_name]}")
 
     elif pragma == "display":
         config.output_mode = ("display", None)
-        debug_print("set output mode to display")
 
     elif pragma == "store":
         if not rest_of_line:
             raise ParserError("store requires a variable name", line_num)
         used_variable = rest_of_line.split()[0].lower()
         config.output_mode = ("store", config.aliases.get(used_variable, used_variable))
-        debug_print(f"set output mode to store in {used_variable}")
 
     elif pragma == "ret":
         if not rest_of_line:
@@ -945,13 +1134,11 @@ def parse_pragma(
             range_val=range_val, var_name=var_name, start_line=line_num
         )
         config.loop_stack.append(loop_ctx)
-        verbose_print(f"starting repeat loop: {range_val} iterations, var={var_name}")
         return True, current_phase, ("repeat_start",)
 
     elif pragma == "endrepeat":
         if not config.loop_stack:
             raise ParserError("//endrepeat without matching //repeat", line_num)
-        verbose_print("ending repeat loop")
         return True, current_phase, ("repeat_end",)
 
     elif pragma == "local":
@@ -969,7 +1156,6 @@ def parse_pragma(
         check_naming_conflicts(local_name, config, line_num, "local ")
         current_loop = config.loop_stack[-1]
         current_loop.locals_in_scope.add(local_name)
-        debug_print(f"defined local variable {local_name}")
         return True, current_phase, ("local_def", local_name, local_expr)
 
     return True, current_phase
@@ -1086,8 +1272,16 @@ def unwrap_loop(
     return unwrapped
 
 
+def replace_in_ast(ast: Any, pattern: Any, replacement: str) -> Any:
+    if ast == pattern:
+        return replacement
+    if isinstance(ast, list):
+        return [replace_in_ast(x, pattern, replacement) for x in ast]
+    return ast
+
+
 def find_beneficial_duplicates(
-    ast: Any, min_length: int = 4, min_savings: int = 10
+    ast: Any, min_length: int = 4, min_savings: int = -999
 ) -> List[Tuple[int, int, Any]]:
     seen = {}
     for sub in all_sublists(ast):
@@ -1100,43 +1294,33 @@ def find_beneficial_duplicates(
         if v["count"] > 1:
             dupe_length = expr_length(v["obj"], -1)
             if dupe_length >= min_length:
-                savings = (v["count"] - 1) * dupe_length - dupe_length - 10
+                savings = (v["count"] - 1) * dupe_length - (dupe_length + 3)
                 if savings > min_savings:
                     beneficial_dupes.append((savings, dupe_length, v["obj"]))
-                    debug_print(
-                        f"found beneficial duplicate: length={dupe_length}, savings={savings}"
-                    )
 
     beneficial_dupes.sort(key=lambda x: (x[0], x[1]), reverse=True)
     return beneficial_dupes
 
 
-def extract_subexpressions(ast: Any, initial_length: int) -> List[Any]:
+def extract_subexpressions(
+    ast: Any, initial_length: int, min_savings: int = -999
+) -> List[Tuple[Any, Optional[Any]]]:
     subexpressions = []
-
-    if initial_length <= 160:
-        debug_print("expression too short for deduplication")
-        return [ast]
-
-    verbose_print(f"detecting duplicates in expression of length {initial_length}")
     current_ast = ast
 
     while True:
-        beneficial_dupes = find_beneficial_duplicates(current_ast)
+        beneficial_dupes = find_beneficial_duplicates(
+            current_ast, min_savings=min_savings
+        )
 
         if not beneficial_dupes:
-            debug_print("no more beneficial duplicates found")
             break
 
         largest_dupe = beneficial_dupes[0][2]
-        subexpressions.append(replace_lists(current_ast, largest_dupe))
-        current_ast = largest_dupe
-        debug_print(f"extracted subexpression, {len(subexpressions)} total")
+        subexpressions.append((largest_dupe, None))
+        current_ast = replace_in_ast(current_ast, largest_dupe, "ans")
 
-    subexpressions.append(current_ast)
-    subexpressions.reverse()
-
-    verbose_print(f"extracted {len(subexpressions)} subexpressions")
+    subexpressions.append((current_ast, None))
     return subexpressions
 
 
@@ -1181,14 +1365,11 @@ def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]
 def process_instructions(
     expanded_code: List[Tuple[int, str]], config: ProgramConfig
 ) -> List[Instruction]:
-    verbose_print("processing instructions")
-
     instructions = []
     i = 0
 
     while i < len(expanded_code):
         line_num, line = expanded_code[i]
-        debug_print(f"processing line {line_num}: {line[:50]}...")
 
         if line.lower().startswith("//") and not line.lower().startswith("//ret"):
             pragma_result = parse_pragma(line, config, line_num, ParsePhase.config)
@@ -1223,6 +1404,7 @@ def process_instructions(
                 precision=config.current_precision,
                 simplify=config.current_simplify,
                 dupe=config.current_dupe,
+                dupe_min_savings=config.current_dupe_min_savings,
                 line_start=block.line_start,
                 line_end=block.line_end,
             )
@@ -1231,22 +1413,16 @@ def process_instructions(
         config.output_mode = None
         i += lines_consumed
 
-    verbose_print(f"collected {len(instructions)} instructions")
     return instructions
 
 
 def compile_instructions(
     instructions: List[Instruction], config: ProgramConfig
 ) -> List[Tuple[str, Tuple[str, Optional[str]]]]:
-    verbose_print("compiling instructions to expressions")
-
     results = []
 
     for inst_idx, inst in enumerate(instructions):
-        verbose_print(f"compiling instruction {inst_idx + 1}/{len(instructions)}")
-
         try:
-
             simplified_ast = simplify_ast(
                 inst.ast,
                 "ε",
@@ -1254,17 +1430,19 @@ def compile_instructions(
                 config.functions,
                 config.aliases,
                 inst.line_start,
+                config.var_names,
             )
             initial_length = expr_length(simplified_ast, -1)
-            debug_print(f"simplified ast has length {initial_length}")
 
             subexpressions = (
-                extract_subexpressions(simplified_ast, initial_length)
+                extract_subexpressions(
+                    simplified_ast, initial_length, inst.dupe_min_savings
+                )
                 if inst.dupe
-                else [simplified_ast]
+                else [(simplified_ast, None)]
             )
 
-            for index, expr_ast in enumerate(subexpressions):
+            for index, (expr_ast, _) in enumerate(subexpressions):
                 if inst.simplify:
                     expr_ast = try_simplify(expr_ast, inst)[0]
 
@@ -1283,7 +1461,6 @@ def compile_instructions(
                                 break
                     if can_strip:
                         expr = expr[1:-1]
-                        debug_print("stripped outer parentheses")
 
                 epsilon_str = str(inst.epsilon)
                 try:
@@ -1296,20 +1473,18 @@ def compile_instructions(
                     epsilon_str = f"({epsilon_str})"
                 expr = expr.replace("ε", epsilon_str)
 
-                output_mode = (
-                    inst.output
-                    if index == len(subexpressions) - 1
-                    else ("display", None)
-                )
+                if index < len(subexpressions) - 1:
+                    output_mode = ("store", "ans")
+                else:
+                    output_mode = inst.output
+
                 results.append((expr, output_mode))
-                debug_print(f"compiled subexpression {index + 1}/{len(subexpressions)}")
 
         except ParserError as e:
             if e.line_num is None:
                 raise ParserError(str(e), inst.line_start)
             raise
 
-    verbose_print(f"compiled {len(results)} final expressions")
     return results
 
 
@@ -1336,36 +1511,36 @@ def main():
 
     filepath = sys.argv[1] if len(sys.argv) >= 2 else "testfile.pm"
 
-    # try:
-    print(f"=== Paramath Compiler v2.0.0 ===")
-    print(f"reading: {filepath}\n")
+    try:
+        print(f"=== Paramath Compiler v2.0.0 ===")
+        print(f"reading: {filepath}\n")
 
-    with open(filepath) as f:
-        code = f.read().strip().replace(";", "\n").split("\n")
+        with open(filepath) as f:
+            code = f.read().strip().replace(";", "\n").split("\n")
 
-    results = parse_program(code)
+        results = parse_program(code)
 
-    with open("math.txt", "w") as f:
-        for result, output in results:
-            print(f"to {output}:")
-            print(result)
-            f.write(f"to {output}:\n{result}\n")
+        with open("math.txt", "w") as f:
+            for result, output in results:
+                print(f"to {output}:")
+                print(result)
+                f.write(f"to {output}:\n{result}\n")
 
-    print(f"\n=== compilation successful! ===")
-    print(f"generated {len(results)} expressions")
+        print(f"\n=== compilation successful! ===")
+        print(f"generated {len(results)} expressions")
 
-    # except FileNotFoundError:
-    #     print(f"error: file '{filepath}' not found")
-    #     sys.exit(1)
-    # except ParserError as e:
-    #     print(f"parser error: {e}")
-    #     sys.exit(1)
-    # except Exception as e:
-    #     print(f"unexpected error: {e}")
-    #     import traceback
+    except FileNotFoundError:
+        print(f"error: file '{filepath}' not found")
+        sys.exit(1)
+    except ParserError as e:
+        print(f"parser error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"unexpected error: {e}")
+        import traceback
 
-    #     traceback.print_exc()
-    #     sys.exit(1)
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

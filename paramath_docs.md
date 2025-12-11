@@ -1,115 +1,115 @@
 # Paramath Language Specification v2.0
 
-_a differentiable programming language for continuous computation_
+_A differentiable programming language for continuous computation_
 
 ---
 
-## table of contents
+## Table of Contents
 
-1. [introduction](#introduction)
-2. [syntax overview](#syntax-overview)
-3. [data types](#data-types)
-4. [operators and functions](#operators-and-functions)
-5. [program structure](#program-structure)
-6. [pragmas and directives](#pragmas-and-directives)
-7. [function definitions](#function-definitions)
-8. [lambda expressions](#lambda-expressions)
-9. [loops and iteration](#loops-and-iteration)
-10. [intermediates and code blocks](#intermediates-and-code-blocks)
-11. [advanced features](#advanced-features)
-12. [complete examples](#complete-examples)
-13. [error reference](#error-reference)
-14. [best practices](#best-practices)
-
----
-
-## introduction
-
-**paramath** is a domain-specific language designed for applications that evaluate mathematical statements (more specifically, mathematical functions in the pre-calculus domain) instead of normal machine code. to do this, paramath uses smooth and continuous approximations of logical operations making all computations differentiable.
-
-> "why the name **_paramath_**?"
-> <br>the word "paramath" actually comes from the portmanteau of "parenthesis" and "mathematics".
-
-### key features
-
--   **differentiable logic**: all operations remain continuous
--   **s-expression syntax**: clean, unambiguous structure
--   **automatic optimization**: duplicate detection and subexpression extraction
--   **loop unrolling**: compile-time iteration for performance
--   **flexible output**: display or store results in variables
+1. [Introduction](#introduction)
+2. [Syntax Overview](#syntax-overview)
+3. [Data Types](#data-types)
+4. [Operators and Functions](#operators-and-functions)
+5. [Program Structure](#program-structure)
+6. [Pragmas and Directives](#pragmas-and-directives)
+7. [Function Definitions](#function-definitions)
+8. [Lambda Expressions](#lambda-expressions)
+9. [Loops and Iteration](#loops-and-iteration)
+10. [Intermediates and Code Blocks](#intermediates-and-code-blocks)
+11. [Advanced Features](#advanced-features)
+12. [Complete Examples](#complete-examples)
+13. [Error Reference](#error-reference)
+14. [Best Practices](#best-practices)
 
 ---
 
-## syntax overview
+## Introduction
 
-### basic structure
+**Paramath** is a domain-specific language designed for applications that evaluate mathematical statements (more specifically, mathematical functions in the pre-calculus domain) instead of normal machine code. To achieve this, Paramath uses smooth and continuous approximations of logical operations, making all computations differentiable.
 
-paramath uses **s-expressions** (symbolic expressions) similar to lisp:
+> **Why the name "Paramath"?**  
+> The word "paramath" comes from the portmanteau of "parenthesis" and "mathematics."
+
+### Key Features
+
+-   **Differentiable logic**: All operations remain continuous
+-   **S-expression syntax**: Clean, unambiguous structure
+-   **Automatic optimization**: Duplicate detection and subexpression extraction
+-   **Loop unrolling**: Compile-time iteration for performance
+-   **Flexible output**: Display or store results in variables
+
+---
+
+## Syntax Overview
+
+### Basic Structure
+
+Paramath uses **S-expressions** (symbolic expressions) similar to Lisp:
 
 ```scheme
 (operator operand1 operand2 ...)
 ```
 
-### comments
+### Comments
 
-comments start with `#` and continue to end of line:
+Comments start with `#` and continue to the end of the line:
 
 ```scheme
-# this is a comment
-(+ 2 3)  # this adds 2 and 3
+# This is a comment
+(+ 2 3)  # This adds 2 and 3
 ```
 
-### variables
+### Variables
 
-reserved variable names (case-insensitive):
+Reserved variable names (case-insensitive):
 
--   single letters: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
--   special: `ans` (previous result), `pi`, `e`
+-   Single letters: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
+-   Special: `ans` (previous result), `pi`, `e`
 
-> **note**: `ans` stores the result of the last computed expression. when using `//store X`, the value goes to both `X` and `ans`. **however**, when `//dupe true` is enabled (default), the compiler may create intermediate variables that make `ans` behave unpredictably - prefer using named intermediates instead!
+> **Note on `ans`:** The `ans` variable stores the result of the last computed expression. When using `//store X`, the value goes to both `X` and `ans`. However, when `//dupe true` is enabled (default), the compiler may create intermediate variables that make `ans` behave unpredictably—prefer using named intermediates instead!
 
 ---
 
-## data types
+## Data Types
 
-### numeric literals
+### Numeric Literals
 
 ```scheme
-42        # integer
-3.14159   # float
--17       # negative integer
-2.5e-3    # scientific notation (preferred for small numbers!)
+42        # Integer
+3.14159   # Float
+-17       # Negative integer
+2.5e-3    # Scientific notation (preferred for small numbers!)
 ```
 
-### constants
+### Constants
 
-define constants using `//global` anywhere in your program:
+Define constants using `//global` anywhere in your program:
 
 ```scheme
 //global MEANING 42
 //global GOLDEN_RATIO (/ (+ 1 (** 5 0.5)) 2)
 ```
 
-constants can reference other previously defined constants:
+Constants can reference other previously defined constants:
 
 ```scheme
 //global RADIUS 5
 //global AREA (* pi (* RADIUS RADIUS))
 ```
 
-you can also set precision for individual constants:
+You can also set precision for individual constants:
 
 ```scheme
 //precision 4
-//global PI_APPROX pi  # evaluates pi to 4 decimal places
+//global PI_APPROX pi  # Evaluates pi to 4 decimal places
 
 //precision 10
-//global E_PRECISE e   # evaluates e to 10 decimal places
+//global E_PRECISE e   # Evaluates e to 10 decimal places
 ```
 
-### aliases
+### Aliases
 
-create alternative names for variables:
+Create alternative names for variables:
 
 ```scheme
 //alias input x        # "input" now refers to x
@@ -117,198 +117,198 @@ create alternative names for variables:
 //alias theta a        # "theta" now refers to a
 
 //display
-//ret (sin theta)      # uses variable a
+//ret (sin theta)      # Uses variable a
 ```
 
 ---
 
-## operators and functions
+## Operators and Functions
 
-### basic arithmetic
+### Basic Arithmetic
 
-| operator | description    | example          |
+| Operator | Description    | Example          |
 | -------- | -------------- | ---------------- |
-| `+`      | addition       | `(+ 2 3)` → 5    |
-| `-`      | subtraction    | `(- 10 3)` → 7   |
-| `*`      | multiplication | `(* 4 5)` → 20   |
-| `/`      | division       | `(/ 10 2)` → 5   |
-| `**`     | exponentiation | `(** 2 8)` → 256 |
+| `+`      | Addition       | `(+ 2 3)` → 5    |
+| `-`      | Subtraction    | `(- 10 3)` → 7   |
+| `*`      | Multiplication | `(* 4 5)` → 20   |
+| `/`      | Division       | `(/ 10 2)` → 5   |
+| `**`     | Exponentiation | `(** 2 8)` → 256 |
 
-**note**: `+` and `*` support multiple arguments and are right-associative:
+> **Note:** `+` and `*` support multiple arguments and are right-associative:
+>
+> ```scheme
+> (+ 1 2 3 4)  # Expands to (+ 1 (+ 2 (+ 3 4)))
+> ```
 
-```scheme
-(+ 1 2 3 4)  # expands to (+ 1 (+ 2 (+ 3 4)))
-```
+### Trigonometric Functions
 
-### trigonometric functions
-
-| function | description     |
+| Function | Description     |
 | -------- | --------------- |
-| `sin`    | sine            |
-| `cos`    | cosine          |
-| `tan`    | tangent         |
-| `arcsin` | inverse sine    |
-| `arccos` | inverse cosine  |
-| `arctan` | inverse tangent |
-| `abs`    | absolute value  |
+| `sin`    | Sine            |
+| `cos`    | Cosine          |
+| `tan`    | Tangent         |
+| `arcsin` | Inverse sine    |
+| `arccos` | Inverse cosine  |
+| `arctan` | Inverse tangent |
+| `abs`    | Absolute value  |
 
-example:
+Example:
 
 ```scheme
 (sin (* pi (/ x 2)))  # sin(πx/2)
 ```
 
-### logical operations (differentiable)
+### Logical Operations (Differentiable)
 
-all logical operations are continuous approximations that depend on epsilon:
+All logical operations are continuous approximations that depend on epsilon:
 
-| operation     | syntax     | description                       |
+| Operation     | Syntax     | Description                       |
 | ------------- | ---------- | --------------------------------- |
-| equality      | `(== a b)` | returns ~1 when a≈b, ~0 otherwise |
-| equal to zero | `(=0 a)`   | returns ~1 when a≈0, ~0 otherwise |
-| greater than  | `(> a b)`  | returns ~1 when a>b, ~0 otherwise |
-| greater/equal | `(>= a b)` | returns ~1 when a≥b, ~0 otherwise |
-| less than     | `(< a b)`  | returns ~1 when a<b, ~0 otherwise |
-| less/equal    | `(<= a b)` | returns ~1 when a≤b, ~0 otherwise |
-| logical not   | `(! a)`    | returns 1-a                       |
+| Equality      | `(== a b)` | Returns ~1 when a≈b, ~0 otherwise |
+| Equal to zero | `(=0 a)`   | Returns ~1 when a≈0, ~0 otherwise |
+| Greater than  | `(> a b)`  | Returns ~1 when a>b, ~0 otherwise |
+| Greater/equal | `(>= a b)` | Returns ~1 when a≥b, ~0 otherwise |
+| Less than     | `(< a b)`  | Returns ~1 when a<b, ~0 otherwise |
+| Less/equal    | `(<= a b)` | Returns ~1 when a≤b, ~0 otherwise |
+| Logical not   | `(! a)`    | Returns 1-a                       |
 
-> **tip**: the smaller your epsilon, the sharper these comparisons become. recommended: `1e-99` for maximum sharpness.
+> **Tip:** The smaller your epsilon, the sharper these comparisons become. Recommended: `1e-99` for maximum sharpness.
 
-### mathematical operations
+### Mathematical Operations
 
-| operation | syntax      | description                      |
+| Operation | Syntax      | Description                      |
 | --------- | ----------- | -------------------------------- |
-| sign      | `(sign a)`  | returns -1, 0, or 1 (continuous) |
-| max       | `(max a b)` | maximum of a and b               |
-| min       | `(min a b)` | minimum of a and b               |
-| max0      | `(max0 a)`  | maximum of a and 0               |
-| min0      | `(min0 a)`  | minimum of a and 0               |
-| modulo    | `(mod a b)` | a modulo b (differentiable!)     |
-| fraction  | `(frac a)`  | fractional part of a             |
-| natural   | `(nat a)`   | rounds a to nearest integer      |
+| Sign      | `(sign a)`  | Returns -1, 0, or 1 (continuous) |
+| Max       | `(max a b)` | Maximum of a and b               |
+| Min       | `(min a b)` | Minimum of a and b               |
+| Max0      | `(max0 a)`  | Maximum of a and 0               |
+| Min0      | `(min0 a)`  | Minimum of a and 0               |
+| Modulo    | `(mod a b)` | a modulo b (differentiable!)     |
+| Fraction  | `(frac a)`  | Fractional part of a             |
+| Natural   | `(nat a)`   | Rounds a to nearest integer      |
 
-### conditional operations
+### Conditional Operations
 
 ```scheme
 (if condition then_value else_value)
 ```
 
-example:
+Example:
 
 ```scheme
 (if (== 0 (mod x 2))
     (/ x 2)
-    (+ (* 3 x) 1))  # collatz conjecture!
+    (+ (* 3 x) 1))  # Collatz conjecture!
 ```
 
 ---
 
-## program structure
+## Program Structure
 
-a paramath program consists of:
+A Paramath program consists of:
 
-1. **configuration** (optional): precision, epsilon, optimization settings
-2. **constants** (optional): named constant definitions
-3. **aliases** (optional): alternative variable names
-4. **functions** (optional): user-defined functions
-5. **code blocks**: computation blocks with output directives
+1. **Configuration** (optional): Precision, epsilon, optimization settings
+2. **Constants** (optional): Named constant definitions
+3. **Aliases** (optional): Alternative variable names
+4. **Functions** (optional): User-defined functions
+5. **Code blocks**: Computation blocks with output directives
 
-**note**: unlike v0.4, configurations and constants can appear anywhere! they only affect code that comes after them.
+> **Note:** Unlike v0.4, configurations and constants can appear anywhere! They only affect code that comes after them.
 
-### minimal program
+### Minimal Program
 
 ```scheme
 //display
-//ret + 2 2
+//ret (+ 2 2)
 ```
 
-**note**: the final surrounding parenthesis is not necessarily needed if you're using a single line string, but if any error arises, surrounding the expression with parenthesis usually resolves it.
+> **Note:** The final surrounding parentheses are not necessarily needed if you're using a single-line string, but if any error occurs, surrounding the expression with parentheses usually resolves it.
 
-### complete program structure
+### Complete Program Structure
 
 ```scheme
-# configuration
+# Configuration
 //precision 6
 //epsilon 1e-99
 //simplify true
 //dupe true
 
-# constants
+# Constants
 //global RADIUS 5
 
-# aliases
+# Aliases
 //alias r x
 
-# functions
+# Functions
 //def circle_area $r
 //ret (* pi (* $r $r))
 //enddef
 
-# computation
+# Computation
 //display
 //ret (circle_area RADIUS)
 ```
 
 ---
 
-## pragmas and directives
+## Pragmas and Directives
 
-pragmas are special commands that start with `//`.
+Pragmas are special commands that start with `//`.
 
-### configuration pragmas
+### Configuration Pragmas
 
-can appear anywhere and affect subsequent code:
+Can appear anywhere and affect subsequent code:
 
 #### `//precision`
 
-sets decimal precision for constant evaluation:
+Sets decimal precision for constant evaluation:
 
 ```scheme
 //precision 4
-//global PI_LOW pi  # evaluates to 4 decimals
+//global PI_LOW pi  # Evaluates to 4 decimals
 
 //precision 10
-//global PI_HIGH pi  # evaluates to 10 decimals
+//global PI_HIGH pi  # Evaluates to 10 decimals
 ```
 
 #### `//epsilon`
 
-sets the epsilon parameter for logical operations:
+Sets the epsilon parameter for logical operations:
 
 ```scheme
-//epsilon 1e-99  # sharp comparisons
-//epsilon 1e-50  # slightly softer
+//epsilon 1e-99  # Sharp comparisons
+//epsilon 1e-50  # Slightly softer
 ```
 
-smaller epsilon = sharper decision boundaries. recommended: `1e-99` for most use cases.
+> **Note:** Smaller epsilon = sharper decision boundaries. Recommended: `1e-99` for most use cases.
 
 #### `//simplify`
 
-enables/disables compile-time simplification of literal expressions:
+Enables/disables compile-time simplification of literal expressions:
 
 ```scheme
-//simplify true   # default: simplifies (+ 2 3) to 5 at compile time
-//simplify false  # keeps all expressions as-is
+//simplify true   # Default: simplifies (+ 2 3) to 5 at compile time
+//simplify false  # Keeps all expressions as-is
 ```
 
 #### `//dupe`
 
-enables/disables duplicate subexpression detection:
+Enables/disables duplicate subexpression detection:
 
 ```scheme
-//dupe true   # default: extracts repeated subexpressions
-//dupe false  # keeps expression as-is, even with duplicates
+//dupe true   # Default: extracts repeated subexpressions
+//dupe false  # Keeps expression as-is, even with duplicates
 ```
 
-> **warning**: when `//dupe true`, the compiler may create intermediate results automatically. this makes `ans` less predictable - use named variables instead!
+> **Warning:** When `//dupe true`, the compiler may create intermediate results automatically. This makes `ans` less predictable - use named variables instead!
 
-### output directives
+### Output Directives
 
-every code block must have an output directive:
+Every code block must have an output directive:
 
 #### `//display`
 
-output result to console:
+Output result to console:
 
 ```scheme
 //display
@@ -317,23 +317,23 @@ output result to console:
 
 #### `//store`
 
-store result in a variable:
+Store result in a variable:
 
 ```scheme
 //store x
 //ret (+ 2 3)
 
 //display
-//ret (* x 2)  # uses stored value
+//ret (* x 2)  # Uses stored value
 ```
 
-valid variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
+Valid variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
 
 ---
 
-## function definitions
+## Function Definitions
 
-### syntax
+### Syntax
 
 ```scheme
 //def function_name $param1 $param2 ...
@@ -341,11 +341,11 @@ valid variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
 //enddef
 ```
 
--   function names are case-insensitive
--   parameters must start with `$`
--   body starts with `//ret` (return directive)
+-   Function names are case-insensitive
+-   Parameters must start with `$`
+-   Body starts with `//ret` (return directive)
 
-### examples
+### Examples
 
 ```scheme
 //def square $x
@@ -357,12 +357,12 @@ valid variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
 //enddef
 
 //display
-//ret (distance 0 0 3 4)  # returns 5.0
+//ret (distance 0 0 3 4)  # Returns 5.0
 ```
 
-### recursion
+### Recursion
 
-functions can call themselves:
+Functions can call themselves:
 
 ```scheme
 //def factorial $n
@@ -374,91 +374,99 @@ functions can call themselves:
 
 ---
 
-## lambda expressions
+## Lambda Expressions
 
-anonymous functions for one-time use.
+Anonymous functions for one-time use.
 
-### syntax
+### Syntax
 
 ```scheme
 ((lambda ($param1 $param2 ...) body) arg1 arg2 ...)
 ```
 
-### examples
+### Examples
 
 ```scheme
-# simple lambda
-((lambda ($x) (* $x $x)) 5)  # returns 25
+# Simple lambda
+((lambda ($x) (* $x $x)) 5)  # Returns 25
 
-# multiple parameters
-((lambda ($x $y) (+ $x $y)) 3 4)  # returns 7
+# Multiple parameters
+((lambda ($x $y) (+ $x $y)) 3 4)  # Returns 7
 
-# nested lambdas
+# Nested lambdas
 ((lambda ($f $x) ($f ($f $x)))
  (lambda ($y) (* $y 2))
- 5)  # returns 20 (doubles 5 twice)
+ 5)  # Returns 20 (doubles 5 twice)
 ```
 
-### lambda rules
+### Lambda Rules
 
--   must be immediately applied (no storing lambdas)
--   parameters must start with `$`
--   body is a single expression (no `//ret` needed!)
+-   Must be immediately applied (no storing lambdas)
+-   Parameters must start with `$`
+-   Body is a single expression (no `//ret` needed!)
+
+> **Note:** I mainly added this feature as a joke and a tribute to lisp. This literally has no practical use cases whatever, but feel free to use it!
 
 ---
 
-## loops and iteration
+## Loops and Iteration
 
-### basic loop syntax
+### Basic Loop Syntax
 
 ```scheme
 //repeat count_expression
-  # loop body
+  # Loop body
 //endrepeat
 ```
 
-loops are **unrolled at compile time** - the loop body is literally copied `count` times with substitutions.
+> **Note:** Loops are **unrolled at compile time** - the loop body is literally copied `count` times with substitutions.
 
-### simple loop
+### Simple Loop
 
 ```scheme
 //global SIZE 3
 
 //display
 //repeat SIZE
-  //ret (+ x 1)
+   //display
+   //ret (+ x 1)
 //endrepeat
 ```
 
-this generates 3 separate expressions, each computing `(+ x 1)`.
+This generates 3 separate expressions, each computing `(+ x 1)`.
 
-### loops with iterator variable
+> **Note:** Indentations are not necessary, and honestly with how simple this feature is, not using indentation won't kill you! The code strips each line of trailing whitespaces anyways.
+
+### Loops with Iterator Variable
 
 ```scheme
 //repeat 5 i
+  //display
   //ret (* i i)
 //endrepeat
 ```
 
-the iterator `i` takes values 0, 1, 2, 3, 4 in each unrolled iteration.
+The iterator `i` takes values 0, 1, 2, 3, 4 in each unrolled iteration.
 
-### local variables in loops
+### Local Variables in Loops
 
-use `//local` to define variables that only exist within the loop:
+Use `//local` to define variables that only exist within the loop:
 
 ```scheme
 //display
 //repeat 3 i
   //local square (* i i)
+
+  //display
   //ret (+ square 1)
 //endrepeat
 ```
 
-each iteration gets its own `square` variable with the correct value.
+Each iteration gets its own `square` variable with the correct value.
 
-### nested loops
+### Nested Loops
 
-loops can be nested:
+Loops can be nested:
 
 ```scheme
 //display
@@ -469,7 +477,7 @@ loops can be nested:
 //endrepeat
 ```
 
-### advanced loop example
+### Advanced Loop Example
 
 ```scheme
 //global N 10
@@ -484,11 +492,11 @@ loops can be nested:
 
 ---
 
-## intermediates and code blocks
+## Intermediates and Code Blocks
 
-### intermediate assignments
+### Intermediate Assignments
 
-instead of nested parentheses hell, you can break expressions into named parts:
+Instead of nested parentheses hell, you can break expressions into named parts:
 
 ```scheme
 //display
@@ -498,22 +506,22 @@ c = (+ a b)
 //ret (** c 0.5)
 ```
 
-this is **much** cleaner than `(** (+ (* x x) (* y y)) 0.5)`!
+This is **much** cleaner than `(** (+ (* x x) (* y y)) 0.5)`!
 
-### naming rules
+### Naming Rules
 
--   intermediate names must be alphanumeric (plus underscores)
--   they cannot conflict with:
-    -   global constants
-    -   function names
-    -   aliases
-    -   other intermediates in the same scope
+-   Intermediate names must be alphanumeric (plus underscores)
+-   They cannot conflict with:
+    -   Global constants
+    -   Function names
+    -   Aliases
+    -   Other intermediates in the same scope
 
-### complex example
+### Complex Example
 
 ```scheme
 //display
-# compute quadratic formula
+# Compute quadratic formula
 discriminant = (- (* b b) (* 4 (* a c)))
 sqrt_disc = (** discriminant 0.5)
 numerator = (+ (* -1 b) sqrt_disc)
@@ -521,17 +529,17 @@ denominator = (* 2 a)
 //ret (/ numerator denominator)
 ```
 
-### automatic expansion
+### Automatic Expansion
 
-the compiler automatically expands intermediates into the final expression. you write clean code, it generates optimized math!
+The compiler automatically expands intermediates into the final expression. You write clean code, it generates optimized math!
 
 ---
 
-## advanced features
+## Advanced Features
 
-### automatic duplicate detection
+### Automatic Duplicate Detection
 
-when `//dupe true` (default), the compiler finds repeated subexpressions and extracts them automatically:
+When `//dupe true` (default), the compiler finds repeated subexpressions and extracts them automatically:
 
 ```scheme
 //dupe true
@@ -539,36 +547,36 @@ when `//dupe true` (default), the compiler finds repeated subexpressions and ext
 //ret (+ (* (+ x 1) (+ x 1)) (* (+ x 1) (+ x 1)))
 ```
 
-the compiler recognizes `(+ x 1)` appears 4 times and may create an intermediate for it.
+The compiler recognizes `(+ x 1)` appears 4 times and may create an intermediate for it.
 
-### epsilon in expressions
+### Epsilon in Expressions
 
-access the current epsilon value using `ε` or `epsilon`:
+Access the current epsilon value using `ε` or `epsilon`:
 
 ```scheme
 //epsilon 0.01
 //display
-//ret (/ x (+ x ε))  # uses current epsilon value
+//ret (/ x (+ x ε))  # Uses current epsilon value
 ```
 
-### expression length optimization
+### Expression Length Optimization
 
-the compiler tracks expression length and tries to minimize it:
+The compiler tracks expression length and tries to minimize it:
 
--   extracts beneficial duplicates (saves space)
--   flattens associative operations
--   applies identity simplifications (e.g., `x * 1` → `x`)
+-   Extracts beneficial duplicates (saves space)
+-   Flattens associative operations
+-   Applies identity simplifications (e.g., `x * 1` → `x`)
 
 ---
 
-## complete examples
+## Complete Examples
 
-### example 1: polynomial evaluation with horner's method
+### Example 1: Polynomial Evaluation with Horner's Method
 
 ```scheme
 //epsilon 1e-99
 
-# evaluate polynomial: ax^3 + bx^2 + cx + d
+# Evaluate polynomial: ax³ + bx² + cx + d
 //def horner $x $a $b $c $d
   term1 = (* $a $x)
   term2 = (+ term1 $b)
@@ -579,10 +587,10 @@ the compiler tracks expression length and tries to minimize it:
 //enddef
 
 //display
-//ret (horner x 2 (-3) 1 5)
+//ret (horner x 2 -3 1 5)
 ```
 
-### example 2: fibonacci with loops
+### Example 2: Fibonacci with Loops
 
 ```scheme
 //global N 10
@@ -591,12 +599,12 @@ the compiler tracks expression length and tries to minimize it:
 //repeat N i
   //local fib (if (< i 2)
                  i
-                 (+ ans ans))  # this is kinda jank but it works
+                 (+ ans ans))  # This is kind of janky but it works
   //ret fib
 //endrepeat
 ```
 
-### example 3: vector operations
+### Example 3: Vector Operations
 
 ```scheme
 //alias x1 a
@@ -616,10 +624,10 @@ the compiler tracks expression length and tries to minimize it:
 vec1_mag = (magnitude x1 y1)
 vec2_mag = (magnitude x2 y2)
 dot = (dot_product x1 y1 x2 y2)
-//ret (/ dot (* vec1_mag vec2_mag))  # cosine of angle
+//ret (/ dot (* vec1_mag vec2_mag))  # Cosine of angle
 ```
 
-### example 4: smooth activation functions
+### Example 4: Smooth Activation Functions
 
 ```scheme
 //epsilon 1e-99
@@ -645,7 +653,7 @@ dot = (dot_product x1 y1 x2 y2)
 //ret (gelu x)
 ```
 
-### example 5: numerical differentiation
+### Example 5: Numerical Differentiation
 
 ```scheme
 //global H 1e-5
@@ -659,14 +667,14 @@ dot = (dot_product x1 y1 x2 y2)
 //enddef
 
 //def my_function $x
-//ret (* $x (* $x $x))  # x^3
+//ret (* $x (* $x $x))  # x³
 //enddef
 
 //display
-//ret (derivative my_function x)  # should be ~3x^2
+//ret (derivative my_function x)  # Should be ~3x²
 ```
 
-### example 6: parametric curves
+### Example 6: Parametric Curves
 
 ```scheme
 //global N 50
@@ -676,80 +684,80 @@ dot = (dot_product x1 y1 x2 y2)
   //local t (/ i N)
   //local x_pos (cos (* 2 (* pi t)))
   //local y_pos (sin (* 2 (* pi t)))
-  //ret (+ (* x_pos x_pos) (* y_pos y_pos))  # should be 1 (circle!)
+  //ret (+ (* x_pos x_pos) (* y_pos y_pos))  # Should be 1 (circle!)
 //endrepeat
 ```
 
 ---
 
-## error reference
+## Error Reference
 
-### parser errors
+### Parser Errors
 
-| error                                     | cause                                  | solution                                 |
+| Error                                     | Cause                                  | Solution                                 |
 | ----------------------------------------- | -------------------------------------- | ---------------------------------------- |
-| `unexpected end of tokens`                | missing closing parenthesis            | add `)`                                  |
-| `unexpected closing parenthesis`          | extra `)` or missing `(`               | check balance                            |
-| `unknown identifier 'X'`                  | undefined variable/constant            | define with `//global` or check spelling |
-| `unknown operation 'X'`                   | undefined function                     | define with `//def` or check spelling    |
-| `incomplete expression at line X`         | unbalanced parentheses in intermediate | check your assignment                    |
-| `expression without assignment at line X` | forgot `=` in intermediate             | use `var_name = expr` format             |
+| `unexpected end of tokens`                | Missing closing parenthesis            | Add `)`                                  |
+| `unexpected closing parenthesis`          | Extra `)` or missing `(`               | Check balance                            |
+| `unknown identifier 'X'`                  | Undefined variable/constant            | Define with `//global` or check spelling |
+| `unknown operation 'X'`                   | Undefined function                     | Define with `//def` or check spelling    |
+| `incomplete expression at line X`         | Unbalanced parentheses in intermediate | Check your assignment                    |
+| `expression without assignment at line X` | Forgot `=` in intermediate             | Use `var_name = expr` format             |
 
-### block errors
+### Block Errors
 
-| error                                | cause                                | solution             |
+| Error                                | Cause                                | Solution             |
 | ------------------------------------ | ------------------------------------ | -------------------- |
-| `no output mode before codeblock`    | missing `//display` or `//store`     | add output directive |
-| `codeblock has no //ret directive`   | missing `//ret`                      | add `//ret expr`     |
-| `incomplete //ret expression`        | unbalanced parentheses after `//ret` | check parentheses    |
-| `'X' conflicts with global constant` | naming conflict                      | use different name   |
-| `'X' conflicts with function name`   | naming conflict                      | use different name   |
+| `no output mode before codeblock`    | Missing `//display` or `//store`     | Add output directive |
+| `codeblock has no //ret directive`   | Missing `//ret`                      | Add `//ret expr`     |
+| `incomplete //ret expression`        | Unbalanced parentheses after `//ret` | Check parentheses    |
+| `'X' conflicts with global constant` | Naming conflict                      | Use different name   |
+| `'X' conflicts with function name`   | Naming conflict                      | Use different name   |
 
-### loop errors
+### Loop Errors
 
-| error                                            | cause                  | solution                             |
+| Error                                            | Cause                  | Solution                             |
 | ------------------------------------------------ | ---------------------- | ------------------------------------ |
-| `//repeat without matching //endrepeat`          | missing `//endrepeat`  | add `//endrepeat`                    |
-| `//endrepeat without matching //repeat`          | extra `//endrepeat`    | remove it                            |
-| `repeat range must be non-negative`              | negative loop count    | use positive number                  |
-| `//local can only be used inside //repeat loops` | `//local` outside loop | move inside loop or use intermediate |
-| `'X' already defined in this loop`               | duplicate local name   | use different name                   |
+| `//repeat without matching //endrepeat`          | Missing `//endrepeat`  | Add `//endrepeat`                    |
+| `//endrepeat without matching //repeat`          | Extra `//endrepeat`    | Remove it                            |
+| `repeat range must be non-negative`              | Negative loop count    | Use positive number                  |
+| `//local can only be used inside //repeat loops` | `//local` outside loop | Move inside loop or use intermediate |
+| `'X' already defined in this loop`               | Duplicate local name   | Use different name                   |
 
-### function errors
+### Function Errors
 
-| error                                     | cause                  | solution                  |
+| Error                                     | Cause                  | Solution                  |
 | ----------------------------------------- | ---------------------- | ------------------------- |
-| `function 'X' expects N arguments, got M` | wrong argument count   | check function definition |
-| `function parameters must start with $`   | invalid parameter name | use `$param` format       |
-| `//enddef without //def`                  | mismatched tags        | check structure           |
+| `function 'X' expects N arguments, got M` | Wrong argument count   | Check function definition |
+| `function parameters must start with $`   | Invalid parameter name | Use `$param` format       |
+| `//enddef without //def`                  | Mismatched tags        | Check structure           |
 
-### lambda errors
+### Lambda Errors
 
-| error                                 | cause                | solution                    |
+| Error                                 | Cause                | Solution                    |
 | ------------------------------------- | -------------------- | --------------------------- |
-| `lambda must be immediately applied`  | standalone lambda    | wrap: `((lambda ...) args)` |
-| `lambda expects N arguments, got M`   | wrong argument count | check parameters            |
-| `lambda parameters must start with $` | invalid parameter    | use `$param` format         |
+| `lambda must be immediately applied`  | Standalone lambda    | Wrap: `((lambda ...) args)` |
+| `lambda expects N arguments, got M`   | Wrong argument count | Check parameters            |
+| `lambda parameters must start with $` | Invalid parameter    | Use `$param` format         |
 
 ---
 
-## best practices
+## Best Practices
 
-### 1. use small epsilon values
+### 1. Use Small Epsilon Values
 
 ```scheme
-//epsilon 1e-99  # recommended for sharp comparisons
+//epsilon 1e-99  # Recommended for sharp comparisons
 ```
 
-**avoid** epsilon values larger than `1e-50` unless you specifically need smooth transitions.
+> **Tip:** Avoid epsilon values larger than `1e-50` unless you specifically need smooth transitions.
 
-### 2. prefer intermediates over deeply nested expressions
+### 2. Prefer Intermediates Over Deeply Nested Expressions
 
 ```scheme
-# bad
+# Bad
 //ret (/ (+ (** (- x2 x1) 2) (** (- y2 y1) 2)) (+ (abs (- x2 x1)) (abs (- y2 y1))))
 
-# good
+# Good
 dx = (- x2 x1)
 dy = (- y2 y1)
 euclidean = (** (+ (* dx dx) (* dy dy)) 0.5)
@@ -757,7 +765,7 @@ manhattan = (+ (abs dx) (abs dy))
 //ret (/ euclidean manhattan)
 ```
 
-### 3. use aliases for semantic clarity
+### 3. Use Aliases for Semantic Clarity
 
 ```scheme
 //alias input_voltage x
@@ -765,33 +773,33 @@ manhattan = (+ (abs dx) (abs dy))
 //alias resistance a
 
 //display
-//ret (/ input_voltage resistance)  # ohm's law
+//ret (/ input_voltage resistance)  # Ohm's law
 ```
 
-### 4. avoid relying on `ans` with dupe detection
+### 4. Avoid Relying on `ans` with Dupe Detection
 
-when `//dupe true`, the compiler may create hidden intermediates that clobber `ans`. instead:
+When `//dupe true`, the compiler may create hidden intermediates that clobber `ans`. Instead:
 
 ```scheme
-# questionable
+# Questionable
 //store result1
 //ret (complex_computation x)
 
 //display
-//ret (* ans 2)  # might not be what you expect!
+//ret (* ans 2)  # Might not be what you expect!
 
-# better
+# Better
 //store result1
 //ret (complex_computation x)
 
 //display
-//ret (* result1 2)  # explicit and clear
+//ret (* result1 2)  # Explicit and clear
 ```
 
-### 5. use loops for repeated patterns
+### 5. Use Loops for Repeated Patterns
 
 ```scheme
-# bad: copy-paste hell
+# Bad: copy-paste hell
 //display
 //ret (* 0 0)
 //display
@@ -800,22 +808,22 @@ when `//dupe true`, the compiler may create hidden intermediates that clobber `a
 //ret (* 2 2)
 # ... 97 more times
 
-# good: loop
+# Good: loop
 //display
 //repeat 100 i
   //ret (* i i)
 //endrepeat
 ```
 
-### 6. break complex functions into smaller ones
+### 6. Break Complex Functions into Smaller Ones
 
 ```scheme
-# bad: monolithic function
+# Bad: monolithic function
 //def neural_network $x
 //ret (... 50 lines of nested operations ...)
 //enddef
 
-# good: modular design
+# Good: modular design
 //def sigmoid $x
 //ret (/ 1 (+ 1 (** e (* -1 $x))))
 //enddef
@@ -826,59 +834,59 @@ when `//dupe true`, the compiler may create hidden intermediates that clobber `a
 
 //def neural_network $x
   h1 = (layer $x 0.5 0.1)
-  h2 = (layer h1 0.3 (-0.2))
+  h2 = (layer h1 0.3 -0.2)
   //ret (layer h2 0.8 0.0)
 //enddef
 ```
 
-### 7. comment your epsilon choices
+### 7. Comment Your Epsilon Choices
 
 ```scheme
-# sharp comparison for exact equality check
+# Sharp comparison for exact equality check
 //epsilon 1e-99
 //display
 //ret (== x y)
 
-# smooth transition for gradient-based optimization
+# Smooth transition for gradient-based optimization
 //epsilon 1e-10
 //display
 //ret (if (> x threshold) high_val low_val)
 ```
 
-### 8. use meaningful constant names
+### 8. Use Meaningful Constant Names
 
 ```scheme
-# bad
+# Bad
 //global C1 299792458
 //global C2 6.62607015e-34
 
-# good
+# Good
 //global SPEED_OF_LIGHT 299792458
 //global PLANCK_CONSTANT 6.62607015e-34
 ```
 
 ---
 
-## language grammar (ebnf)
+## Language Grammar (EBNF)
 
 ```ebnf
 program        ::= (pragma | function | code_block)*
 
-pragma         ::= "//" pragma_name (pragma_args)?
+pragma         ::= "//" pragma_name pragma_args?
 pragma_name    ::= "precision" | "epsilon" | "global" | "alias" |
                    "display" | "store" | "ret" | "simplify" | "dupe" |
                    "def" | "enddef" | "repeat" | "endrepeat" | "local"
 
-code_block     ::= output_directive (intermediate)* ret_directive
+code_block     ::= output_directive intermediate* ret_directive
 output_directive ::= "//display" | "//store" var_name
 intermediate   ::= identifier "=" expression newline
-ret_directive  ::= "//ret" expression (newline)?
+ret_directive  ::= "//ret" expression newline?
 
 function       ::= "//def" func_name param* newline
-                   (intermediate)* ret_directive newline
+                   intermediate* ret_directive newline
                    "//enddef"
 
-loop           ::= "//repeat" expression (identifier)? newline
+loop           ::= "//repeat" expression identifier? newline
                    (pragma | local_def | intermediate | ret_directive)*
                    "//endrepeat"
 
@@ -899,35 +907,35 @@ operator       ::= "+" | "-" | "*" | "/" | "**" |
 
 param          ::= "$" identifier
 var_name       ::= "a".."f" | "x" | "y" | "m"
-number         ::= ["-"] digit+ ["." digit+] [("e"|"E") ["-"|"+"] digit+]
+number         ::= "-"? digit+ ("." digit+)? (("e"|"E") ("-"|"+")? digit+)?
 identifier     ::= (alpha | "_") (alpha | digit | "_")*
 ```
 
 ---
 
-## migration guide from v0.4
+## Migration Guide from v0.4
 
-if you're migrating from v0.4, here are the key changes:
+If you're migrating from v0.4, here are the key changes:
 
-### what's new
+### What's New
 
-1. **loops**: `//repeat` and `//endrepeat` for iteration
-2. **locals**: `//local` for loop-scoped variables
-3. **intermediates**: named subexpressions in code blocks
-4. **flexible constants**: `//global` can appear anywhere (renamed from `//const`)
-5. **aliases**: `//alias` for alternative variable names
-6. **return directive**: `//ret` explicitly marks the return value
-7. **built-in operations**: `mod`, `frac`, `nat` are now first-class
-8. **better optimization**: improved duplicate detection
+1. **Loops**: `//repeat` and `//endrepeat` for iteration
+2. **Locals**: `//local` for loop-scoped variables
+3. **Intermediates**: Named subexpressions in code blocks
+4. **Flexible constants**: `//global` can appear anywhere (renamed from `//const`)
+5. **Aliases**: `//alias` for alternative variable names
+6. **Return directive**: `//ret` explicitly marks the return value
+7. **Built-in operations**: `mod`, `frac`, `nat` are now first-class
+8. **Better optimization**: Improved duplicate detection
 
-### what changed
+### What Changed
 
 1. `//const` → `//global` (more accurate name)
-2. bare expressions → must use `//ret` in functions and code blocks
+2. Bare expressions → must use `//ret` in functions and code blocks
 3. `//then` → removed (no longer needed with `//ret`)
-4. constants can be defined anywhere, not just at the start
+4. Constants can be defined anywhere, not just at the start
 
-### example migration
+### Example Migration
 
 **v0.4 code:**
 
@@ -960,14 +968,14 @@ if you're migrating from v0.4, here are the key changes:
 
 ---
 
-## contributing
+## Contributing
 
-paramath is an evolving language. contributions and feedback are welcome!
+Paramath is an evolving language. Contributions and feedback are welcome!
 
-**version**: 2.0  
-**license**: MIT  
-**github**: _add this link later ig_
+**Version**: 2.0  
+**License**: MIT  
+**GitHub**: https://github.com/CastyLoz17/paramath
 
 ---
 
-_last updated: december 2025_
+_Last updated: December 2025_
