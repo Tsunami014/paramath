@@ -1,3 +1,4 @@
+import sympy
 import json
 from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass, field
@@ -87,6 +88,7 @@ _caches = {
     "length": {},
     "generate": {},
     "try_simplify": {},
+    "sympy": {},
     "substitute": {},
 }
 
@@ -173,6 +175,8 @@ class ProgramConfig:
     output_mode: Optional[Tuple[str, Optional[str]]] = None
     simplify_literals: bool = True
     current_simplify: bool = None
+    use_sympy: bool = False
+    current_sympy: bool = None
     detect_duplicates: bool = True
     current_dupe: bool = None
     dupe_min_savings: int = -999
@@ -187,6 +191,8 @@ class ProgramConfig:
             self.current_epsilon = self.epsilon
         if self.current_precision is None:
             self.current_precision = self.precision
+        if self.current_sympy is None:
+            self.current_sympy = self.use_sympy
         if self.current_simplify is None:
             self.current_simplify = self.simplify_literals
         if self.current_dupe is None:
@@ -210,6 +216,7 @@ class Instruction:
     epsilon: Union[float, str]
     precision: Optional[int]
     simplify: bool
+    sympy: bool
     dupe: bool
     dupe_min_savings: int
     line_start: int
@@ -232,8 +239,13 @@ def num(val):
 
 
 def tokenize(code: str) -> List[str]:
+    last_code = None
+    while last_code != code:
+        last_code = code
+        code = code.replace("  ", " ")
+
     code = code.replace("**", " ** ")
-    for op in ["+", "-", "*", "/"]:
+    for op in [" + ", " - ", " * ", " / "]:
         code = code.replace(op, f" {op} ")
     code = code.replace("(", " ( ").replace(")", " ) ")
     tokens = code.split()
@@ -512,7 +524,6 @@ def parse_tokens(tokens: List[str], line_num: int) -> Any:
                 return token
 
 
-# abc
 def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any]:
     if op == "*":
         if 0 in operands:
@@ -523,7 +534,7 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
                 return operands[1]
             if operands[1] == 1:
                 return operands[0]
-            # x / x = 1
+
             if operands[0] == operands[1]:
                 debug_print("simplified x * x via structural")
                 return ["**", operands[0], 2]
@@ -533,7 +544,7 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
                 return operands[1]
             if operands[1] == 0:
                 return operands[0]
-            # a + a = 2 * a
+
             if operands[0] == operands[1]:
                 debug_print("simplified a + a = 2*a")
                 return ["*", 2, operands[0]]
@@ -550,7 +561,7 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
                 return 0
             if operands[1] == 1:
                 return operands[0]
-            # x / x = 1
+
             if operands[0] == operands[1]:
                 debug_print("simplified x / x = 1")
                 return 1
@@ -566,10 +577,8 @@ def apply_identity_simplifications(op: str, operands: List[Any]) -> Optional[Any
 
 
 def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[Any]:
-    """handles more complex algebraic simplifications like a+a+a=3*a and a*a*a=a**3"""
-
     if op == "+":
-        # flatten nested additions first
+
         flat_operands = []
         for operand in operands:
             if isinstance(operand, list) and len(operand) >= 2 and operand[0] == "+":
@@ -577,7 +586,6 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
             else:
                 flat_operands.append(operand)
 
-        # count occurrences of each term
         term_counts = {}
         for operand in flat_operands:
             key = json.dumps(operand, sort_keys=False)
@@ -585,7 +593,6 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
                 term_counts[key] = {"count": 0, "term": operand}
             term_counts[key]["count"] += 1
 
-        # rebuild with multiplications
         new_terms = []
         for data in term_counts.values():
             if data["count"] == 1:
@@ -598,18 +605,18 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
         elif len(new_terms) == 1:
             return new_terms[0]
         elif len(new_terms) != len(flat_operands):
-            # we actually simplified something!!
+
             debug_print(
                 f"simplified repeated addition: {len(flat_operands)} -> {len(new_terms)} terms"
             )
-            # rebuild as nested binary additions
+
             result = new_terms[-1]
             for term in reversed(new_terms[:-1]):
                 result = ["+", term, result]
             return result
 
     elif op == "*":
-        # flatten nested multiplications first
+
         flat_operands = []
         for operand in operands:
             if isinstance(operand, list) and len(operand) >= 2 and operand[0] == "*":
@@ -617,17 +624,15 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
             else:
                 flat_operands.append(operand)
 
-        # count occurrences of each base
         base_counts = {}
         numeric_product = 1
 
         for operand in flat_operands:
-            # handle numeric literals separately
+
             if isinstance(operand, (int, float)):
                 numeric_product *= operand
                 continue
 
-            # handle existing powers a**n
             if isinstance(operand, list) and len(operand) == 3 and operand[0] == "**":
                 base = operand[1]
                 power = operand[2]
@@ -641,10 +646,8 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
                     base_counts[key] = {"power": 0, "base": operand}
                 base_counts[key]["power"] += 1
 
-        # rebuild with exponentiation
         new_factors = []
 
-        # add numeric product if not 1
         if numeric_product != 1:
             if numeric_product == 0:
                 return 0
@@ -652,7 +655,7 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
 
         for data in base_counts.values():
             if data["power"] == 0:
-                continue  # shouldn't happen but just in case
+                continue
             elif data["power"] == 1:
                 new_factors.append(data["base"])
             else:
@@ -663,11 +666,11 @@ def apply_structural_simplifications(op: str, operands: List[Any]) -> Optional[A
         elif len(new_factors) == 1:
             return new_factors[0]
         elif len(new_factors) != len(flat_operands):
-            # we actually simplified something!!
+
             debug_print(
                 f"simplified repeated multiplication: {len(flat_operands)} -> {len(new_factors)} factors"
             )
-            # rebuild as nested binary multiplications
+
             result = new_factors[-1]
             for factor in reversed(new_factors[:-1]):
                 result = ["*", factor, result]
@@ -860,6 +863,18 @@ def simplify_ast(
             else:
                 raise ParserError(f"unknown expansion for '{op_lower}'", line_num)
 
+            print(
+                simplify_ast(
+                    expanded,
+                    epsilon,
+                    constants,
+                    functions,
+                    aliases,
+                    line_num,
+                    var_names,
+                )
+            )
+
             return simplify_ast(
                 expanded, epsilon, constants, functions, aliases, line_num, var_names
             )
@@ -867,6 +882,34 @@ def simplify_ast(
         raise ParserError(f"unknown operation '{op_lower}'", line_num)
 
     raise ParserError(f"invalid operator: {op}", line_num)
+
+
+@cached("sympy")
+def simplify_with_sympy(expr_str: str, line_num: int) -> str:
+    try:
+        import sympy as sp
+
+        expr_str = (
+            expr_str.replace("arcsin", "asin")
+            .replace("arccos", "acos")
+            .replace("arctan", "atan")
+        )
+
+        sympy_expr = sp.sympify(expr_str)
+        simplified = sp.simplify(sympy_expr)
+        result = str(simplified)
+
+        result = (
+            result.replace("asin", "arcsin")
+            .replace("acos", "arccos")
+            .replace("atan", "arctan")
+        )
+
+        debug_print(f"sympy simplified: {len(expr_str)} -> {len(result)} chars")
+        return result.replace(" ", "")
+    except Exception as e:
+        debug_print(f"sympy failed, keeping original: {e}")
+        return expr_str
 
 
 @cached("length")
@@ -1061,6 +1104,13 @@ def parse_pragma(
                 config.current_dupe_min_savings = min_savings
             except ValueError:
                 raise ParserError(f"dupe min_savings must be an integer", line_num)
+
+    elif pragma == "sympy":
+        if not rest_of_line:
+            raise ParserError(f"{pragma} requires true/false", line_num)
+        value = rest_of_line.strip().lower() == "true"
+        config.use_sympy = value
+        config.current_sympy = value
 
     elif pragma == "variables":
         if not rest_of_line:
@@ -1329,6 +1379,11 @@ def preprocess_globals_and_aliases(code: List[str], config: ProgramConfig):
 
     for i, line in enumerate(code):
         line = line.split("#")[0].strip()
+        if line and line.lower().startswith("//variables"):
+            parse_pragma(line, config, i + 1, ParsePhase.constants)
+
+    for i, line in enumerate(code):
+        line = line.split("#")[0].strip()
         if line and (
             line.lower().startswith("//global") or line.lower().startswith("//alias")
         ):
@@ -1403,6 +1458,7 @@ def process_instructions(
                 epsilon=config.current_epsilon,
                 precision=config.current_precision,
                 simplify=config.current_simplify,
+                sympy=config.current_sympy,
                 dupe=config.current_dupe,
                 dupe_min_savings=config.current_dupe_min_savings,
                 line_start=block.line_start,
@@ -1472,6 +1528,9 @@ def compile_instructions(
                 if needs_parens:
                     epsilon_str = f"({epsilon_str})"
                 expr = expr.replace("ε", epsilon_str)
+
+                if inst.sympy:
+                    expr = simplify_with_sympy(expr, inst.line_start)
 
                 if index < len(subexpressions) - 1:
                     output_mode = ("store", "ans")
