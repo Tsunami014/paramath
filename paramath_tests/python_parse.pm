@@ -1,5 +1,5 @@
-//precision 5
-//epsilon 0
+//precision 3
+//epsilon 1e-99
 
 # test 1: global scope basic eval
 //global length len("silly")

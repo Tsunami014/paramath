@@ -123,7 +123,6 @@ def _log_message(prefix: str, message: str, max_len: int = 120):
     original_len = len(message)
     truncated = message[:max_len]
     log_line = f"{prefix} {original_len}] {truncated}"
-    print(log_line)
     if LOGFILE:
         with open(LOGFILE, "a") as f:
             f.write(f"{prefix} {original_len}] {message}\n")
@@ -370,10 +369,7 @@ def compile_value(
     possible_result = None
     try:
         eval_result = eval(expr_str, eval_namespace)
-        print(num(eval_result))
         result = round(num(eval_result), config.precision)
-        print(result)
-        print(config.precision)
         debug_print(f"eval'd to: {result}")
         if safe_eval:
             possible_result = result
