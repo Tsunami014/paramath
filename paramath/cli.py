@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import json
 from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass, field
@@ -13,7 +14,6 @@ import math
 PROGRAM_VERSION = "2.2.2"
 
 
-VAR_NAMES = list("abcdefxym") + ["ans", "pi", "e"]
 BUILTIN_FUNCS = ["abs", "sin", "cos", "tan", "arcsin", "arccos", "arctan"]
 BASIC_OPS = {"+", "-", "*", "/", "**"} | set(BUILTIN_FUNCS)
 
@@ -97,12 +97,6 @@ _caches = {
 }
 
 
-def clear_all_caches():
-    for cache in _caches.values():
-        cache.clear()
-    debug_print("cleared all caches")
-
-
 def cached(cache_name: str):
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -123,6 +117,7 @@ def _log_message(prefix: str, message: str, max_len: int = 120):
     original_len = len(message)
     truncated = message[:max_len]
     log_line = f"{prefix} {original_len}] {truncated}"
+    print(log_line)
     if LOGFILE:
         with open(LOGFILE, "a") as f:
             f.write(f"{prefix} {original_len}] {message}\n")
@@ -144,7 +139,6 @@ class ParsePhase(Enum):
     functions = auto()
     output = auto()
     code = auto()
-    done = auto()
 
 
 @dataclass
@@ -159,7 +153,6 @@ class Function:
 class LoopContext:
     range_val: int
     var_name: Optional[str]
-    start_line: int
     body_lines: List[Tuple[int, str]] = field(default_factory=list)
     locals_in_scope: set = field(default_factory=set)
 
@@ -184,7 +177,7 @@ class ProgramConfig:
     current_dupe_min_savings: int = None
     loop_stack: List[LoopContext] = field(default_factory=list)
     var_names: List[str] = field(
-        default_factory=lambda: list("abcdefxym") + ["pi", "e"]
+        default_factory=lambda: list("abcdefxym") + ["ans", "pi", "e"]
     )
 
     def __post_init__(self):
@@ -230,7 +223,7 @@ class ParserError(Exception):
         self.line_num = line_num
 
 
-def num(val):
+def num(val: int | float):
     try:
         if float(val).is_integer():
             return int(val)
@@ -251,7 +244,7 @@ def tokenize(code: str) -> List[str]:
         code = code.replace(op, f" {op} ")
     code = code.replace("(", " ( ").replace(")", " ) ")
     tokens = code.split()
-    debug_print(f"tokenized into {len(tokens)} tokens: {tokens[:10]}...")
+    debug_print(f"tokenized into {len(tokens)} tokens: {tokens}...")
     return tokens
 
 
@@ -329,7 +322,7 @@ def compile_value(
     safe_eval: bool = False,
 ) -> float:
     expr_str = expr_str.strip()
-    verbose_print(f"compiling value: {expr_str[:50]}...")
+    verbose_print(f"compiling value: {expr_str}...")
 
     try:
         result = num(expr_str)
@@ -372,6 +365,7 @@ def compile_value(
         result = round(num(eval_result), config.precision)
         debug_print(f"eval'd to: {result}")
         if safe_eval:
+            debug_print("(SAFE EVAL ENABLED)")
             possible_result = result
         else:
             return result
@@ -531,7 +525,7 @@ def collect_codeblock(
                             ret_expr = f"({ret_expr})"
                     block.ret_expr = ret_expr
                     block.line_end = line_num
-                    debug_print(f"collected complete ret expr: {ret_expr[:50]}...")
+                    debug_print(f"collected complete ret expr: {ret_expr}...")
                     return block, i - start_idx + 1
                 else:
                     current_expr_lines.append(ret_expr)
@@ -567,7 +561,7 @@ def collect_codeblock(
                 check_naming_conflicts(var_name, config, line_num, "intermediate ")
                 block.intermediates[var_name] = expr
                 current_expr_lines.clear()
-                debug_print(f"collected intermediate: {var_name} = {expr[:30]}...")
+                debug_print(f"collected intermediate: {var_name} = {expr}...")
             else:
                 raise ParserError(
                     f"expression without assignment at line {line_num}", line_num
@@ -1138,6 +1132,12 @@ def generate_expression(ast: Any, line_num: int) -> str:
         left = generate_expression(operands[0], line_num)
         right = generate_expression(operands[1], line_num)
 
+        if op == "**":
+            if (isinstance(operands[0], (int, float)) and operands[0] < 0) or (
+                isinstance(operands[0], str) and left.startswith("-")
+            ):
+                left = f"({left})"
+
         needs_right_parens = (
             isinstance(operands[1], list)
             and len(operands[1]) >= 2
@@ -1156,6 +1156,10 @@ def generate_expression(ast: Any, line_num: int) -> str:
                 )
             )
         )
+
+        if op == "/" and isinstance(operands[1], list) and len(operands[1]) >= 2:
+            if operands[1][0] in ["*", "/"]:
+                needs_right_parens = True
 
         if needs_left_parens:
             left = f"({left})"
@@ -1210,7 +1214,11 @@ def try_simplify(ast, inst):
 
 
 def parse_pragma(
-    line: str, config: ProgramConfig, line_num: int, current_phase: ParsePhase
+    line: str,
+    config: ProgramConfig,
+    line_num: int,
+    current_phase: ParsePhase,
+    safe_eval: bool = False,
 ) -> Union[Tuple[bool, ParsePhase], Tuple[bool, ParsePhase, tuple]]:
     if not line.startswith("//"):
         return False, current_phase
@@ -1294,7 +1302,7 @@ def parse_pragma(
         const_name = parts[0]
         const_value_str = parts[1]
         config.code_globals[const_name] = compile_value(
-            const_value_str, config.code_globals, line_num, config
+            const_value_str, config.code_globals, line_num, config, safe_eval
         )
 
     elif pragma == "display":
@@ -1321,7 +1329,9 @@ def parse_pragma(
         var_name = parts[1].split()[0] if len(parts) >= 2 else None
         try:
             range_val = int(
-                compile_value(range_expr, config.code_globals, line_num, config)
+                compile_value(
+                    range_expr, config.code_globals, line_num, config, safe_eval
+                )
             )
             if range_val < 0:
                 raise ParserError(
@@ -1331,9 +1341,8 @@ def parse_pragma(
             raise ParserError(f"failed to evaluate repeat range: {e}", line_num)
         if var_name and not var_name.replace("_", "").isalnum():
             raise ParserError(f"invalid iterator name '{var_name}'", line_num)
-        loop_ctx = LoopContext(
-            range_val=range_val, var_name=var_name, start_line=line_num
-        )
+
+        loop_ctx = LoopContext(range_val=range_val, var_name=var_name)
         config.loop_stack.append(loop_ctx)
         return True, current_phase, ("repeat_start",)
 
@@ -1395,93 +1404,36 @@ def collect_loop_body(
     raise ParserError("//repeat without matching //endrepeat", start_idx + 1)
 
 
-def unwrap_loop(
-    loop_lines: List[Tuple[int, str]], config: ProgramConfig, start_line: int
-) -> List[Tuple[int, str]]:
-    if not loop_lines:
-        return []
+def collect_function_body(
+    code: List[str], start_idx: int
+) -> Tuple[List[Tuple[int, str]], int]:
+    func_lines = []
+    i = start_idx
+    depth = 0
 
-    first_line_num, first_line = loop_lines[0]
-    parts = first_line.split(None, 3)
+    verbose_print(f"collecting function body starting at line {start_idx + 1}")
 
-    if len(parts) < 2:
-        raise ParserError("repeat requires range value", first_line_num)
+    while i < len(code):
+        line = code[i].split("#")[0].strip()
+        line_num = i + 1
+        if not line:
+            i += 1
+            continue
 
-    range_expr = parts[1]
-    iter_var = parts[2] if len(parts) >= 3 else None
+        if line.lower().startswith("//def"):
+            depth += 1
+            debug_print(f"nested def, depth now {depth + 1}")
+        elif line.lower().startswith("//enddef"):
+            if depth == 0:
+                verbose_print(f"collected function body: {len(func_lines)} lines")
+                return func_lines, i - start_idx + 1
+            depth -= 1
+            debug_print(f"nested enddef, depth now {depth + 1}")
 
-    try:
-        range_val = int(
-            compile_value(range_expr, config.code_globals, first_line_num, config)
-        )
-    except Exception as e:
-        raise ParserError(f"failed to evaluate repeat range: {e}", first_line_num)
+        func_lines.append((line_num, line))
+        i += 1
 
-    verbose_print(f"unwrapping loop: {range_val} iterations")
-
-    body_lines = loop_lines[1:-1]
-    local_defs = []
-    non_local_lines = []
-
-    for line_num, line in body_lines:
-        if line.lower().startswith("//local"):
-            rest = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else ""
-            parts = rest.split(None, 1)
-            if len(parts) < 2:
-                raise ParserError("local requires name and value", line_num)
-            local_name = parts[0]
-            local_expr = parts[1]
-            local_defs.append((local_name, local_expr, line_num))
-            debug_print(f"found local definition: {local_name}")
-        else:
-            non_local_lines.append((line_num, line))
-
-    unwrapped = []
-
-    for iteration in range(range_val):
-        debug_print(f"processing iteration {iteration}/{range_val}")
-        iteration_code_globals = dict(config.code_globals)
-
-        if iter_var:
-            iteration_code_globals[iter_var] = iteration
-
-        for local_name, local_expr, def_line_num in local_defs:
-            current_expr = local_expr
-
-            if iter_var:
-                current_expr = re.sub(
-                    r"(?<!local\.)(?<!locals\.)\b" + re.escape(iter_var) + r"\b",
-                    str(iteration),
-                    current_expr,
-                )
-
-            try:
-                evaluated_val = compile_value(
-                    current_expr, iteration_code_globals, def_line_num, config, {}
-                )
-                iteration_code_globals[local_name] = evaluated_val
-                debug_print(
-                    f"successfully evaluated local {local_name} = {evaluated_val}"
-                )
-            except Exception as e:
-                debug_print(f"failed to evaluate local {local_name}: {e}")
-
-        for line_num, line in non_local_lines:
-            new_line = line
-
-            if iter_var:
-                new_line = re.sub(
-                    r"(?<!local\.)(?<!locals\.)\b" + re.escape(iter_var) + r"\b",
-                    str(iteration),
-                    new_line,
-                )
-
-            unwrapped.append((line_num, new_line))
-
-    verbose_print(
-        f"unwrapped loop into {len(unwrapped)} lines ({range_val} iterations)"
-    )
-    return unwrapped
+    raise ParserError("//def without matching //enddef", start_idx + 1)
 
 
 def replace_in_ast(ast: Any, pattern: Any, replacement: str) -> Any:
@@ -1534,20 +1486,20 @@ def extract_subexpressions(
     return [(largest_dupe, "ans"), (replaced_ast, None)]
 
 
-def preprocess_globals_and_aliases(code: List[str], config: ProgramConfig):
+def preprocess_globals_and_aliases(code: List[str], config: ProgramConfig, safe_eval):
     verbose_print("preprocessing globals and aliases")
 
     for i, line in enumerate(code):
         line = line.split("#")[0].strip()
         if line and line.lower().startswith("//precision"):
-            parse_pragma(line, config, i + 1, ParsePhase.code_globals)
+            parse_pragma(line, config, i + 1, ParsePhase.code_globals, safe_eval)
         elif line and line.lower().startswith("//epsilon"):
-            parse_pragma(line, config, i + 1, ParsePhase.code_globals)
+            parse_pragma(line, config, i + 1, ParsePhase.code_globals, safe_eval)
 
     for i, line in enumerate(code):
         line = line.split("#")[0].strip()
         if line and line.lower().startswith("//variables"):
-            parse_pragma(line, config, i + 1, ParsePhase.code_globals)
+            parse_pragma(line, config, i + 1, ParsePhase.code_globals, safe_eval)
 
     for i, line in enumerate(code):
         line = line.split("#")[0].strip()
@@ -1561,12 +1513,85 @@ def preprocess_globals_and_aliases(code: List[str], config: ProgramConfig):
     )
 
 
-def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]]:
+def preprocess_functions(code: List[str], config: ProgramConfig):
+    verbose_print("preprocessing function definitions")
+
+    i = 0
+    while i < len(code):
+        line = code[i].split("#")[0].strip()
+        line_num = i + 1
+
+        if line.lower().startswith("//def"):
+            parts = line.split(None, 2)
+            if len(parts) < 2:
+                raise ParserError("//def requires function name", line_num)
+
+            func_name = parts[1].lower()
+
+            check_naming_conflicts(func_name, config, line_num, "function ")
+
+            params = []
+            if len(parts) >= 3:
+                param_tokens = parts[2].split()
+                for param in param_tokens:
+                    if not param.startswith("$"):
+                        raise ParserError(
+                            f"function parameters must start with $ (got '{param}')",
+                            line_num,
+                        )
+                    params.append(param)
+
+            func_lines, lines_consumed = collect_function_body(code, i + 1)
+
+            body_intermediates = {}
+            body_ret = None
+
+            for body_line_num, body_line in func_lines:
+                if body_line.lower().startswith("//ret"):
+                    rest = (
+                        body_line.split(None, 1)[1]
+                        if len(body_line.split(None, 1)) > 1
+                        else ""
+                    )
+                    body_ret = rest
+                elif body_line.lower().startswith("//"):
+                    continue
+                else:
+                    assignment = parse_intermediate_assignment(body_line)
+                    if assignment:
+                        var_name, expr = assignment
+                        body_intermediates[var_name] = expr
+
+            if body_ret is None:
+                raise ParserError(f"function '{func_name}' has no //ret", line_num)
+
+            final_body_expr = expand_intermediates(
+                body_ret, body_intermediates, line_num
+            )
+
+            tokens = tokenize(final_body_expr)
+            body_ast = parse_tokens(tokens, line_num)
+
+            config.functions[func_name] = Function(
+                name=func_name, params=params, body=body_ast, line_num=line_num
+            )
+
+            debug_print(f"registered function '{func_name}' with {len(params)} params")
+
+            i += lines_consumed + 1
+        else:
+            i += 1
+
+    verbose_print(f"found {len(config.functions)} functions")
+
+
+def expand_loops(
+    code: List[str], config: ProgramConfig, safe_eval: bool = False
+) -> List[Tuple[int, str]]:
     verbose_print("expanding loops")
 
     def expand_with_context(
-        lines: List[str],
-        loop_context: Dict[str, str],
+        lines: List[str], loop_context: Dict[str, str], safe_eval: bool = False
     ) -> List[Tuple[int, str]]:
         expanded_code = []
         i = 0
@@ -1575,6 +1600,21 @@ def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]
             line = lines[i].split("#")[0].strip()
             if not line:
                 i += 1
+                continue
+
+            if line.lower().startswith("//def"):
+                depth = 0
+                i += 1
+                while i < len(lines):
+                    check_line = lines[i].split("#")[0].strip()
+                    if check_line.lower().startswith("//def"):
+                        depth += 1
+                    elif check_line.lower().startswith("//enddef"):
+                        if depth == 0:
+                            i += 1
+                            break
+                        depth -= 1
+                    i += 1
                 continue
 
             if line.lower().startswith("//repeat"):
@@ -1596,7 +1636,11 @@ def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]
                 try:
                     range_val = int(
                         compile_value(
-                            range_expr, config.code_globals, loop_lines[0][0], config
+                            range_expr,
+                            config.code_globals,
+                            loop_lines[0][0],
+                            config,
+                            safe_eval,
                         )
                     )
                 except Exception as e:
@@ -1655,6 +1699,7 @@ def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]
                                 def_line_num,
                                 config,
                                 iter_loop_vars,
+                                safe_eval,
                             )
                             iter_code_globals[local_name] = evaluated_val
                             iter_loop_vars[local_name] = evaluated_val
@@ -1688,7 +1733,9 @@ def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]
 
                         body_as_list.append(processed_line)
 
-                    nested_expanded = expand_with_context(body_as_list, iter_context)
+                    nested_expanded = expand_with_context(
+                        body_as_list, iter_context, safe_eval
+                    )
                     expanded_code.extend(nested_expanded)
 
                 i += lines_consumed
@@ -1705,13 +1752,13 @@ def expand_loops(code: List[str], config: ProgramConfig) -> List[Tuple[int, str]
 
         return expanded_code
 
-    result = expand_with_context(code, {})
+    result = expand_with_context(code, {}, safe_eval)
     verbose_print(f"expanded to {len(result)} lines")
     return result
 
 
 def process_instructions(
-    expanded_code: List[Tuple[int, str]], config: ProgramConfig
+    expanded_code: List[Tuple[int, str]], config: ProgramConfig, safe_eval: bool = False
 ) -> List[Instruction]:
     instructions = []
     i = 0
@@ -1720,7 +1767,9 @@ def process_instructions(
         line_num, line = expanded_code[i]
 
         if line.lower().startswith("//") and not line.lower().startswith("//ret"):
-            pragma_result = parse_pragma(line, config, line_num, ParsePhase.config)
+            pragma_result = parse_pragma(
+                line, config, line_num, ParsePhase.config, safe_eval
+            )
             if isinstance(pragma_result, tuple) and len(pragma_result) == 3:
                 if pragma_result[2][0] in ["repeat_start", "repeat_end", "local_def"]:
                     i += 1
@@ -1770,7 +1819,7 @@ def compile_instructions(
 ) -> List[Tuple[str, Tuple[str, Optional[str]]]]:
     results = []
 
-    for inst_idx, inst in enumerate(instructions):
+    for inst in instructions:
         try:
             simplified_ast = simplify_ast(
                 inst.ast,
@@ -1854,8 +1903,9 @@ def parse_program(
 
     config = ProgramConfig()
 
-    preprocess_globals_and_aliases(code, config)
-    expanded_code = expand_loops(code, config)
+    preprocess_globals_and_aliases(code, config, safe_eval)
+    preprocess_functions(code, config)
+    expanded_code = expand_loops(code, config, safe_eval)
     instructions = process_instructions(expanded_code, config)
     results = compile_instructions(instructions, config)
 
@@ -1869,10 +1919,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  python paramath.py testfile.pm
-  python paramath.py testfile.pm -D -V
-  python paramath.py testfile.pm -L output.log
-  python paramath.py testfile.pm -DVL debug.log
+  paramath testfile.pm
+  paramath testfile.pm -D -V
+  paramath testfile.pm -L output.log
+  paramath testfile.pm -DVL debug.log
         """,
     )
 
@@ -1951,9 +2001,9 @@ examples:
 
         with open(args.output, "w") as f:
             for result, output in results:
-                result = (
-                    result.replace("**", "^").replace("*", "").replace("ans", "ANS")
-                )
+                # result = (
+                #     result.replace("**", "^").replace("*", "").replace("ans", "ANS")
+                # )
                 if PRINT_OUTPUT:
                     print(f"to {output}:")
                     print(result)
@@ -1977,11 +2027,3 @@ examples:
 
         traceback.print_exc()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    VERBOSE = False
-    DEBUG = False
-    LOGFILE = None
-
-    main()

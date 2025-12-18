@@ -32,7 +32,6 @@ _A differentiable programming language for continuous computation_
 
 ### Key Features
 
--   **Differentiable logic**: All operations remain continuous
 -   **S-expression syntax**: Clean, unambiguous structure
 -   **Automatic optimization**: Duplicate detection and subexpression extraction
 -   **Loop unrolling**: Compile-time iteration for performance
@@ -485,7 +484,7 @@ Loops can be nested:
 //global N 10
 
 //display
-//repeat N i
+//repeat globals.N i
   //local x_val (+ i 1)
   //local y_val (* x_val x_val)
   //ret (/ y_val x_val)
@@ -597,12 +596,10 @@ The compiler tracks expression length and tries to minimize it:
 ```scheme
 //global N 10
 
-//display
-//repeat N i
-  //local fib (if (< i 2)
-                 i
-                 (+ ans ans))  # This is kind of janky but it works
-  //ret fib
+//repeat globals.N i
+  //display
+  special = < i 2
+  //ret (if special i (** ans 2))
 //endrepeat
 ```
 
@@ -681,11 +678,11 @@ dot = (dot_product x1 y1 x2 y2)
 ```scheme
 //global N 50
 
-//display
-//repeat N i
+//repeat globals.N i
   //local t (/ i N)
   //local x_pos (cos (* 2 (* pi t)))
   //local y_pos (sin (* 2 (* pi t)))
+  //display
   //ret (+ (* x_pos x_pos) (* y_pos y_pos))  # Should be 1 (circle!)
 //endrepeat
 ```
