@@ -25,7 +25,7 @@ _A differentiable programming language for continuous computation_
 
 ## Introduction
 
-**Paramath** is a domain-specific language designed for applications that evaluate mathematical statements (more specifically, mathematical functions in the pre-calculus domain) instead of normal machine code. To achieve this, Paramath uses smooth and continuous approximations of logical operations, making all computations differentiable.
+**Paramath** is a domain-specific language designed for applications that evaluate mathematical statements (more specifically, mathematical functions in the pre-calculus domain) instead of normal machine code.
 
 > **Why the name "Paramath"?**  
 > The word "paramath" comes from the portmanteau of "parenthesis" and "mathematics."
@@ -93,7 +93,7 @@ Constants can reference other previously defined constants:
 
 ```scheme
 //global RADIUS 5
-//global AREA (* pi (* RADIUS RADIUS))
+//global AREA (* pi (** RADIUS 2)
 ```
 
 You can also set precision for individual constants:
@@ -157,7 +157,7 @@ Example:
 (sin (* pi (/ x 2)))  # sin(πx/2)
 ```
 
-### Logical Operations (Differentiable)
+### Logical Operations
 
 All logical operations are continuous approximations that depend on epsilon:
 
@@ -182,7 +182,7 @@ All logical operations are continuous approximations that depend on epsilon:
 | Min       | `(min a b)` | Minimum of a and b               |
 | Max0      | `(max0 a)`  | Maximum of a and 0               |
 | Min0      | `(min0 a)`  | Minimum of a and 0               |
-| Modulo    | `(mod a b)` | a modulo b (differentiable!)     |
+| Modulo    | `(mod a b)` | a modulo b                   |
 | Fraction  | `(frac a)`  | Fractional part of a             |
 | Natural   | `(nat a)`   | Rounds a to nearest integer      |
 
@@ -231,6 +231,7 @@ A Paramath program consists of:
 //epsilon 1e-99
 //simplify true
 //dupe true
+//sympy false
 
 # Constants
 //global RADIUS 5
@@ -283,6 +284,15 @@ Sets the epsilon parameter for logical operations:
 
 > **Note:** Smaller epsilon = sharper decision boundaries. Recommended: `1e-99` for most use cases.
 
+#### `//variable`
+
+Sets the letter variables that the compiler recognizes and accepts. Note that the variables `ans`, `pi`, and `e` cannot be changed.
+
+```scheme
+//variable a b c d e f x y z m  # Default
+//variable m n o p q
+```
+
 #### `//simplify`
 
 Enables/disables compile-time simplification of literal expressions:
@@ -294,14 +304,25 @@ Enables/disables compile-time simplification of literal expressions:
 
 #### `//dupe`
 
-Enables/disables duplicate subexpression detection:
+Enables/disables duplicate subexpression detection, with optional input for how much savings there must be before the subexpression is extracted:
 
 ```scheme
-//dupe true   # Default: extracts repeated subexpressions
-//dupe false  # Keeps expression as-is, even with duplicates
+//dupe true       # Default: extracts repeated subexpressions
+//dupe false      # Keeps expression as-is, even with duplicates
+//dupe true -999  # Makes sure all possible duplications are extracted
 ```
 
 > **Warning:** When `//dupe true`, the compiler may create intermediate results automatically. This makes `ans` less predictable - use named variables instead!
+
+#### `//sympy`
+
+Enables/disables using Sympy to simplify the math expression:
+
+```scheme
+//sympy true  # Will use SymPy to simplify expressions 
+//sympy false  # Default. Disables using SymPy to simplify expressions
+```
+> **Warning:** This option is not extensively tested, and thus is more or less experimental. To use it, you must first have SymPy installed, otherwise the compiler will crash.
 
 ### Output Directives
 
@@ -501,13 +522,13 @@ Instead of nested parentheses hell, you can break expressions into named parts:
 
 ```scheme
 //display
-a = (* x x)
-b = (* y y)
+a = (** x 2)
+b = (** y 2)
 c = (+ a b)
 //ret (** c 0.5)
 ```
 
-This is **much** cleaner than `(** (+ (* x x) (* y y)) 0.5)`!
+This is **much** cleaner than `(** (+ (** x 2) (** y 2)) 0.5)`!
 
 ### Naming Rules
 
@@ -516,6 +537,7 @@ This is **much** cleaner than `(** (+ (* x x) (* y y)) 0.5)`!
     -   Global constants
     -   Function names
     -   Aliases
+    -   Variable names
     -   Other intermediates in the same scope
 
 ### Complex Example
@@ -523,7 +545,7 @@ This is **much** cleaner than `(** (+ (* x x) (* y y)) 0.5)`!
 ```scheme
 //display
 # Compute quadratic formula
-discriminant = (- (* b b) (* 4 (* a c)))
+discriminant = (- (** b 2) (* 4 (* a c)))
 sqrt_disc = (** discriminant 0.5)
 numerator = (+ (* -1 b) sqrt_disc)
 denominator = (* 2 a)
@@ -543,7 +565,7 @@ The compiler automatically expands intermediates into the final expression. You 
 When `//dupe true` (default), the compiler finds repeated subexpressions and extracts them automatically:
 
 ```scheme
-//dupe true
+//dupe true -999
 //display
 //ret (+ (* (+ x 1) (+ x 1)) (* (+ x 1) (+ x 1)))
 ```
@@ -566,6 +588,7 @@ The compiler tracks expression length and tries to minimize it:
 
 -   Extracts beneficial duplicates (saves space)
 -   Flattens associative operations
+-   Applies heuristics to simplify (e.g., `x + x + x` → `x * 3`
 -   Applies identity simplifications (e.g., `x * 1` → `x`)
 
 ---
@@ -781,13 +804,15 @@ When `//dupe true`, the compiler may create hidden intermediates that clobber `a
 
 ```scheme
 # Questionable
-//store result1
+//store ans
 //ret (complex_computation x)
 
 //display
 //ret (* ans 2)  # Might not be what you expect!
 
 # Better
+//alias result1 a
+
 //store result1
 //ret (complex_computation x)
 
@@ -810,7 +835,7 @@ When `//dupe true`, the compiler may create hidden intermediates that clobber `a
 # Good: loop
 //display
 //repeat 100 i
-  //ret (* i i)
+  //ret (** i 2)
 //endrepeat
 ```
 
@@ -973,7 +998,7 @@ Paramath is an evolving language. Contributions and feedback are welcome!
 
 **Version**: 2.0  
 **License**: MIT  
-**GitHub**: https://github.com/CastyLoz17/paramath
+**GitHub**: https://github.com/kaemori/paramath
 
 ---
 
