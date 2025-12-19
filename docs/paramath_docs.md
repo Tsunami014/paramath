@@ -182,7 +182,7 @@ All logical operations are continuous approximations that depend on epsilon:
 | Min       | `(min a b)` | Minimum of a and b               |
 | Max0      | `(max0 a)`  | Maximum of a and 0               |
 | Min0      | `(min0 a)`  | Minimum of a and 0               |
-| Modulo    | `(mod a b)` | a modulo b                   |
+| Modulo    | `(mod a b)` | a modulo b                       |
 | Fraction  | `(frac a)`  | Fractional part of a             |
 | Natural   | `(nat a)`   | Rounds a to nearest integer      |
 
@@ -319,9 +319,10 @@ Enables/disables duplicate subexpression detection, with optional input for how 
 Enables/disables using Sympy to simplify the math expression:
 
 ```scheme
-//sympy true  # Will use SymPy to simplify expressions 
+//sympy true  # Will use SymPy to simplify expressions
 //sympy false  # Default. Disables using SymPy to simplify expressions
 ```
+
 > **Warning:** This option is not extensively tested, and thus is more or less experimental. To use it, you must first have SymPy installed, otherwise the compiler will crash.
 
 ### Output Directives
@@ -588,7 +589,7 @@ The compiler tracks expression length and tries to minimize it:
 
 -   Extracts beneficial duplicates (saves space)
 -   Flattens associative operations
--   Applies heuristics to simplify (e.g., `x + x + x` → `x * 3`
+-   Applies heuristics to simplify (e.g., `x + x + x` → `x * 3`)
 -   Applies identity simplifications (e.g., `x * 1` → `x`)
 
 ---

@@ -113,10 +113,12 @@ def cached(cache_name: str):
     return decorator
 
 
-def _log_message(prefix: str, message: str, max_len: int = 120):
+def _log_message(prefix: str, message: str, max_len: int = 127):
     original_len = len(message)
     truncated = message[:max_len]
-    log_line = f"{prefix} {original_len}] {truncated}"
+    log_line = (
+        f"{prefix} {original_len}] {truncated}{'...' if original_len > max_len else ''}"
+    )
     print(log_line)
     if LOGFILE:
         with open(LOGFILE, "a") as f:
@@ -198,6 +200,7 @@ class ProgramConfig:
 @dataclass
 class CodeBlock:
     intermediates: Dict[str, str] = field(default_factory=dict)
+    lambda_intermediates: Dict[str, Any] = field(default_factory=dict)
     ret_expr: Optional[str] = None
     line_start: int = 0
     line_end: int = 0
@@ -263,17 +266,26 @@ def replace_lists(target, pattern):
     return target
 
 
-def parse_intermediate_assignment(line: str) -> Optional[Tuple[str, str]]:
-    if "=" not in line:
-        return None
-    parts = line.split("=", 1)
-    if len(parts) != 2:
-        return None
-    var_name = parts[0].strip()
-    if not var_name.replace("_", "").isalnum():
-        return None
-    debug_print(f"parsed intermediate assignment: {var_name}")
-    return (var_name, parts[1].strip())
+def parse_intermediate_assignment(line: str) -> Optional[Tuple[str, str, bool]]:
+    if ":=" in line:
+        parts = line.split(":=", 1)
+        if len(parts) != 2:
+            return None
+        var_name = parts[0].strip()
+        if not var_name.replace("_", "").isalnum():
+            return None
+        debug_print(f"parsed lambda intermediate assignment: {var_name}")
+        return (var_name, parts[1].strip(), True)
+    elif "=" in line:
+        parts = line.split("=", 1)
+        if len(parts) != 2:
+            return None
+        var_name = parts[0].strip()
+        if not var_name.replace("_", "").isalnum():
+            return None
+        debug_print(f"parsed intermediate assignment: {var_name}")
+        return (var_name, parts[1].strip(), False)
+    return None
 
 
 def check_naming_conflicts(
@@ -495,6 +507,7 @@ def collect_codeblock(
     expanded_code: List[Tuple[int, str]], start_idx: int, config: ProgramConfig
 ) -> Tuple[CodeBlock, int]:
     block = CodeBlock(line_start=expanded_code[start_idx][0])
+    block.lambda_intermediates = {}
     current_expr_lines = []
     i = start_idx
     in_ret_expr = False
@@ -557,11 +570,21 @@ def collect_codeblock(
 
             assignment = parse_intermediate_assignment(full_expr)
             if assignment:
-                var_name, expr = assignment
+                var_name, expr, is_lambda = assignment
                 check_naming_conflicts(var_name, config, line_num, "intermediate ")
-                block.intermediates[var_name] = expr
+
+                if is_lambda:
+                    tokens = tokenize(expr)
+                    if tokens[0] != "(":
+                        tokens = ["("] + tokens + [")"]
+                    lambda_ast = parse_tokens(tokens, line_num)
+                    block.lambda_intermediates[var_name] = lambda_ast
+                    debug_print(f"collected lambda intermediate: {var_name}")
+                else:
+                    block.intermediates[var_name] = expr
+                    debug_print(f"collected intermediate: {var_name} = {expr}...")
+
                 current_expr_lines.clear()
-                debug_print(f"collected intermediate: {var_name} = {expr}...")
             else:
                 raise ParserError(
                     f"expression without assignment at line {line_num}", line_num
@@ -597,7 +620,12 @@ def expand_intermediates(
         for var_name, var_expr in intermediates.items():
             pattern = r"\b" + re.escape(var_name) + r"\b"
             if re.search(pattern, result):
-                result = re.sub(pattern, f"({var_expr})", result)
+                # check if var_expr needs wrapping
+                expr_to_sub = var_expr.strip()
+                if not (expr_to_sub.startswith("(") and expr_to_sub.endswith(")")):
+                    expr_to_sub = f"({expr_to_sub})"
+
+                result = re.sub(pattern, expr_to_sub, result)
                 changed = True
                 debug_print(f"iteration {iteration}: substituted {var_name}")
         if not changed:
@@ -609,6 +637,122 @@ def expand_intermediates(
         raise ParserError(
             "infinite loop detected in intermediate variable substitution", line_num
         )
+
+    return result
+
+
+def expand_lambda_calls(
+    expr: str, lambda_intermediates: Dict[str, Any], line_num: int
+) -> str:
+    max_iterations = 100
+    iteration = 0
+    result = expr
+
+    while iteration < max_iterations:
+        changed = False
+
+        for lambda_name in lambda_intermediates.keys():
+            pattern = r"\b" + re.escape(lambda_name) + r"\s*\("
+
+            pos = 0
+            new_result = []
+
+            while pos < len(result):
+                match = re.search(pattern, result[pos:])
+                if not match:
+                    new_result.append(result[pos:])
+                    break
+
+                new_result.append(result[pos : pos + match.start()])
+
+                call_start = pos + match.end() - 1
+                paren_depth = 1
+                i = call_start + 1
+
+                while i < len(result) and paren_depth > 0:
+                    if result[i] == "(":
+                        paren_depth += 1
+                    elif result[i] == ")":
+                        paren_depth -= 1
+                    i += 1
+
+                if paren_depth != 0:
+                    raise ParserError(
+                        f"unmatched parentheses in lambda call to '{lambda_name}'",
+                        line_num,
+                    )
+
+                args_str = result[call_start + 1 : i - 1]
+
+                args_tokens = []
+                current_arg = []
+                paren_depth = 0
+
+                for char in args_str:
+                    if char == "(":
+                        paren_depth += 1
+                        current_arg.append(char)
+                    elif char == ")":
+                        paren_depth -= 1
+                        current_arg.append(char)
+                    elif char == " " and paren_depth == 0:
+                        if current_arg:
+                            args_tokens.append("".join(current_arg))
+                            current_arg = []
+                    else:
+                        current_arg.append(char)
+
+                if current_arg:
+                    args_tokens.append("".join(current_arg))
+
+                lambda_ast = lambda_intermediates[lambda_name]
+
+                if not (
+                    isinstance(lambda_ast, list)
+                    and len(lambda_ast) >= 3
+                    and isinstance(lambda_ast[0], str)
+                    and lambda_ast[0].lower() == "lambda"
+                ):
+                    raise ParserError(
+                        f"'{lambda_name}' is not a valid lambda", line_num
+                    )
+
+                params = lambda_ast[1]
+                body = lambda_ast[2]
+
+                if not isinstance(params, list):
+                    raise ParserError(
+                        f"lambda '{lambda_name}' has invalid parameters", line_num
+                    )
+
+                if len(args_tokens) != len(params):
+                    raise ParserError(
+                        f"lambda '{lambda_name}' expects {len(params)} arguments, got {len(args_tokens)}",
+                        line_num,
+                    )
+
+                args_asts = []
+                for arg_str in args_tokens:
+                    arg_tokens = tokenize(arg_str)
+                    if arg_tokens[0] != "(":
+                        arg_tokens = ["("] + arg_tokens + [")"]
+                    args_asts.append(parse_tokens(arg_tokens, line_num))
+
+                substituted = substitute_params(body, params, args_asts)
+                expanded_str = generate_expression(substituted, line_num)
+
+                new_result.append(f"({expanded_str})")
+                pos = i
+                changed = True
+
+            result = "".join(new_result)
+
+        if not changed:
+            break
+        iteration += 1
+
+    if iteration >= max_iterations:
+        raise ParserError("infinite loop detected in lambda expansion", line_num)
 
     return result
 
@@ -1239,7 +1383,11 @@ def parse_pragma(
     elif pragma == "epsilon":
         if not rest_of_line:
             raise ParserError("epsilon requires a value", line_num)
-        config.epsilon = rest_of_line.strip()
+        epsilon_str = rest_of_line.strip()
+        try:
+            config.epsilon = float(epsilon_str)
+        except ValueError:
+            raise ParserError(f"invalid epsilon value '{epsilon_str}'", line_num)
         config.current_epsilon = config.epsilon
 
     elif pragma == "simplify":
@@ -1559,7 +1707,7 @@ def preprocess_functions(code: List[str], config: ProgramConfig):
                 else:
                     assignment = parse_intermediate_assignment(body_line)
                     if assignment:
-                        var_name, expr = assignment
+                        var_name, expr, is_lambda = assignment
                         body_intermediates[var_name] = expr
 
             if body_ret is None:
@@ -1757,6 +1905,64 @@ def expand_loops(
     return result
 
 
+def expand_lambda_calls_ast(
+    ast: Any, lambda_intermediates: Dict[str, Any], line_num: int
+) -> Any:
+    """Expand lambda calls within an AST structure"""
+    if isinstance(ast, (int, float, str)):
+        return ast
+
+    if not isinstance(ast, list) or len(ast) == 0:
+        return ast
+
+    if isinstance(ast[0], str):
+        lambda_name = ast[0]
+        if lambda_name in lambda_intermediates:
+            lambda_ast = lambda_intermediates[lambda_name]
+
+            debug_print(f"Found lambda call: {lambda_name}")
+            debug_print(f"Lambda AST: {lambda_ast}")
+
+            if not (
+                isinstance(lambda_ast, list)
+                and len(lambda_ast) >= 3
+                and isinstance(lambda_ast[0], str)
+                and lambda_ast[0].lower() == "lambda"
+            ):
+                raise ParserError(
+                    f"'{lambda_name}' is not a valid lambda (got {lambda_ast})",
+                    line_num,
+                )
+
+            params = lambda_ast[1]
+            body = lambda_ast[2]
+            args = ast[1:]
+
+            if not isinstance(params, list):
+                raise ParserError(
+                    f"lambda '{lambda_name}' has invalid parameters", line_num
+                )
+
+            if len(args) != len(params):
+                raise ParserError(
+                    f"lambda '{lambda_name}' expects {len(params)} arguments, got {len(args)}",
+                    line_num,
+                )
+
+            expanded_args = [
+                expand_lambda_calls_ast(arg, lambda_intermediates, line_num)
+                for arg in args
+            ]
+
+            substituted = substitute_params(body, params, expanded_args)
+
+            return expand_lambda_calls_ast(substituted, lambda_intermediates, line_num)
+
+    return [
+        expand_lambda_calls_ast(node, lambda_intermediates, line_num) for node in ast
+    ]
+
+
 def process_instructions(
     expanded_code: List[Tuple[int, str]], config: ProgramConfig, safe_eval: bool = False
 ) -> List[Instruction]:
@@ -1783,15 +1989,30 @@ def process_instructions(
             )
 
         block, lines_consumed = collect_codeblock(expanded_code, i, config)
+
+        ret_expr = block.ret_expr
+
+        # First, expand intermediates normally
+        processed_intermediates = {}
+        for var_name, var_expr in block.intermediates.items():
+            processed_intermediates[var_name] = var_expr
+
         final_expr = expand_intermediates(
-            block.ret_expr, block.intermediates, block.line_end
+            ret_expr, processed_intermediates, block.line_end
         )
 
+        # Parse into AST
         try:
             tokens = tokenize(final_expr)
             ast = parse_tokens(tokens, block.line_start)
         except ParserError as e:
             raise ParserError(str(e), block.line_start)
+
+        # NOW expand lambda calls in the AST
+        if block.lambda_intermediates:
+            ast = expand_lambda_calls_ast(
+                ast, block.lambda_intermediates, block.line_start
+            )
 
         instructions.append(
             Instruction(

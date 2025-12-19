@@ -3,6 +3,8 @@
 //simplify true
 //dupe false
 
+//variables x y z
+
 # test 1: basic sympy simplification
 //sympy true
 //display

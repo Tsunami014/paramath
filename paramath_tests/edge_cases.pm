@@ -3,6 +3,8 @@
 //simplify true
 //dupe false
 
+//variables a b c d e f g h i j x y z
+
 # test 1: deeply nested parentheses
 //display
 //ret (+ (+ (+ (+ (+ a b) c) d) e) f)

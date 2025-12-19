@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paramath"
+version = "0.1.0"
+description = "A differentiable programming language for continuous computation"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+
+[project.scripts]
+paramath = "paramath.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["paramath"]

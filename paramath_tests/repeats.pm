@@ -27,10 +27,10 @@
 //endrepeat
 
 # test 4: pythonic and paramath indexed repeat with locals
-//repeat test_4 i
-//local pythonic len("hello world") + loop.i
+//repeat globals.test_4 i
+//local pythonic len("hello world") + i
 //local paramath (max i 2)
-//local pythonreference local.paramath ** 3
+//local pythonreference locals.paramath ** 3
 //store D
 //ret + D pythonic paramath pythonreference
 //endrepeat

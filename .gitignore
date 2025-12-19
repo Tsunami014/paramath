@@ -1,0 +1,47 @@
+# ─── python junk 
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# ─── virtualenvs 
+.venv/
+venv/
+env/
+ENV/
+
+# ─── test / coverage junk 
+.pytest_cache/
+.coverage
+htmlcov/
+.cache/
+
+# ─── editors / os junk 
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ─── paramath specific spicy trash 
+_gitignored/
+paramath_tests/*.out
+tests/__pycache__/
+
+# ─── neural experiments (big chungus files) 
+*_compact.txt
+weights*.txt
+exported.txt
+image_packages.txt
+
+# ─── random backups / temp files 
+*.bak
+*.tmp
+*.swp
+
+# ─── logs 
+*.log

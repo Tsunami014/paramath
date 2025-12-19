@@ -3,6 +3,8 @@
 //simplify true
 //dupe false
 
+//variables a b c d x y z
+
 # test 1: multiplication identities
 //display
 //ret (* x 1)
