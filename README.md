@@ -22,7 +22,7 @@ Full documentation is available [here](docs/paramath_docs.md)!
 
 ### Method 1 (PyPI):
 
-To install the latest release, just install it fron PyPI using:
+To install the latest release, just install it fron (PyPI)[https://pypi.org/project/paramath-lang/] using:
 
 ```
 pip install paramath-lang
