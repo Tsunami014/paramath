@@ -61,22 +61,22 @@ examples:
             ARGS[name] = getattr(args, name)
 
     if ARGS["logfile"]:
-        with open(ARGS["logfile"], "w") as f:
+        with open(ARGS["logfile"], "w+") as f:
             f.write(f"Paramath Compiler {PROGRAM_VERSION}\n")
 
     try:
         if args.filepath is None:
             raise ParserError("No path to file provided, quitting")
         if args.print or args.output:
-            print(f"reading {args.filepath}")
+            print(f"Reading \033[33;1m{args.filepath}\033[0m")
             if args.safe_eval:
-                print("[safe evaluation enabled]")
+                print("\033[34;1m[Safe evaluation enabled]\033[0m")
             if ARGS["debug"]:
-                print("[debug mode enabled]")
+                print("\033[34;1m[Debug mode enabled]\033[0m")
             if ARGS["verbose"]:
-                print("[verbose mode enabled]")
+                print("\033[34;1m[Verbose mode enabled]\033[0m")
             if ARGS["logfile"]:
-                print(f"[logging to: {ARGS['logfile']}]")
+                print(f"\033[34;1m[Logging to: {ARGS['logfile']}]\033[0m")
 
         with open(args.filepath) as f:
             code = f.read().strip().replace(";", "\n").split("\n")
@@ -84,34 +84,37 @@ examples:
         results = parse_program(code, args.safe_eval)
 
         if args.print or args.output:
-            print("=== compilation successful! ===")
-            print(f"generated {len(results)} expressions")
+            print("\033[32;1m=== Compilation successful! ===\033[0m")
+            print(f"Generated \033[1m{len(results)}\033[0m expressions")
 
         out = ""
         for result, output in results:
             result = (
                 result.replace("**", "^").replace("*", "").replace("ans", "ANS")
             )
-            out += f"to {output}:\n{result}\n"
+            output_line = ' '.join(i for i in output if i)
+            if not args.output:
+                output_line = f"\033[35;1m{output_line.capitalize()}\033[0m"
+            out += f"  {output_line}:\n{result}\n"
 
         if args.output:
             with open(args.output, "w+") as f:
                 f.write(out)
             if args.print:
-                print(f"written to: {args.output}")
+                print(f"Written to: \033[33;1m{args.output}\033[0m")
         else:
             if args.print:
                 print()
             print(out, end="", flush=True)
 
     except FileNotFoundError:
-        print(f"error: file '{args.filepath}' not found")
+        print(f"\033[31;1mError: file '{args.filepath}' not found\033[0m")
         sys.exit(1)
     except ParserError as e:
-        print(f"parser error: {e}")
+        print(f"\033[31;1mParser error: {e}\033[0m")
         sys.exit(1)
     except Exception as e:
-        print(f"unexpected error: {e}")
+        print(f"\033[31;1mUnexpected error: {e}\033[0m")
         import traceback
 
         traceback.print_exc()
